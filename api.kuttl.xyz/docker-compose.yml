@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: kuttl-postgres
+    environment:
+      POSTGRES_DB: kuttl_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1123581321Aa.,
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kuttl_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - kuttl-network
+    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements"]
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: kuttl-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@kuttl.xyz
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - kuttl-network
+    profiles:
+      - admin # Only start with `docker-compose --profile admin up`
+
+  api:
+    build: . # Looks for a 'Dockerfile' in your folder
+    env_file:
+      - .env
+    container_name: kuttl_api
+    restart: always
+    depends_on:
+      - postgres
+    ports:
+      - "8080:3005" # Map host port 8080 to container port 3005
+    environment:
+      DATABASE_URL: "postgres://postgres:1123581321Aa.,@kuttl-postgres:5432/kuttl_db?sslmode=disable"
+      PORT: "3005"
+      ALLOWED_ORIGINS: "*"
+    networks:
+      - kuttl-network
+    deploy:
+      resources:
+        limits:
+          memory: 2G # Cap Go backend memory
+
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  kuttl-network:
+    driver: bridge

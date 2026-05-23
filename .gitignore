@@ -1,0 +1,4 @@
+./api.kuttl.xyz/.env
+./app.kuttl.xyz/node_modules
+./kuttl-react-js/node_modules
+./kuttl-vanilla-js/node_modules

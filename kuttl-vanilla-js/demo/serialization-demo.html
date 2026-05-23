@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>InterceptJS - Website Serialization Demo</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            color: #2d3748;
+            margin-bottom: 8px;
+        }
+
+        .demo-section {
+            margin-bottom: 32px;
+            padding: 24px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: #f7fafc;
+        }
+
+        .demo-section h2 {
+            margin-top: 0;
+            color: #4a5568;
+        }
+
+        .controls {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            background: #4299e1;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background: #3182ce;
+            transform: translateY(-1px);
+        }
+
+        .btn.secondary {
+            background: #718096;
+        }
+
+        .btn.secondary:hover {
+            background: #4a5568;
+        }
+
+        .btn.danger {
+            background: #e53e3e;
+        }
+
+        .btn.danger:hover {
+            background: #c53030;
+        }
+
+        .output {
+            background: #1a202c;
+            color: #e2e8f0;
+            padding: 16px;
+            border-radius: 6px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        .sample-content {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+            margin-top: 24px;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-left: 4px solid #4299e1;
+        }
+
+        .card h3 {
+            margin-top: 0;
+            color: #2d3748;
+        }
+
+        .card p {
+            color: #4a5568;
+            line-height: 1.6;
+        }
+
+        .stats {
+            display: flex;
+            gap: 16px;
+            margin: 16px 0;
+            flex-wrap: wrap;
+        }
+
+        .stat {
+            background: #edf2f7;
+            padding: 12px 16px;
+            border-radius: 6px;
+            text-align: center;
+            flex: 1;
+            min-width: 100px;
+        }
+
+        .stat-value {
+            display: block;
+            font-size: 24px;
+            font-weight: bold;
+            color: #2d3748;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #718096;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .customizable {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .customizable:hover {
+            transform: scale(1.02);
+        }
+
+        .customizable.selected {
+            outline: 2px solid #4299e1;
+            outline-offset: 2px;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .loading {
+            animation: pulse 1.5s infinite;
+        }
+
+        .notification {
+            background: #48bb78;
+            color: white;
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+            display: none;
+        }
+
+        .notification.show {
+            display: block;
+        }
+
+        .notification.error {
+            background: #e53e3e;
+        }
+
+        .grid-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-top: 24px;
+        }
+
+        .snapshot-viewer {
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            height: 400px;
+            overflow-y: auto;
+        }
+
+        .snapshot-tree {
+            padding: 16px;
+        }
+
+        .tree-node {
+            margin-left: 20px;
+            padding: 4px 0;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        .tree-node-element {
+            color: #3182ce;
+            font-weight: bold;
+        }
+
+        .tree-node-text {
+            color: #718096;
+        }
+
+        .tree-node-props {
+            color: #805ad5;
+            font-size: 11px;
+        }
+
+        .diff-viewer {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 16px;
+            font-family: monospace;
+            font-size: 11px;
+            border-radius: 6px;
+        }
+
+        .diff-added {
+            background: rgba(72, 187, 120, 0.2);
+            color: #48bb78;
+        }
+
+        .diff-removed {
+            background: rgba(229, 62, 62, 0.2);
+            color: #e53e3e;
+        }
+
+        .diff-modified {
+            background: rgba(66, 153, 225, 0.2);
+            color: #4299e1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🦑 InterceptJS Website Serialization</h1>
+            <p>Smart context-aware website state management with AI-powered embeddings</p>
+        </div>
+
+        <div class="notification" id="notification">
+            Operation completed successfully!
+        </div>
+
+        <!-- Core Controls -->
+        <div class="demo-section">
+            <h2>📸 Snapshot Management</h2>
+            <p>Create complete website snapshots with full context including components, styles, layout, and customizations.</p>
+            
+            <div class="controls">
+                <button class="btn" onclick="createSnapshot()">Create Snapshot</button>
+                <button class="btn secondary" onclick="createDiff()">Generate Diff</button>
+                <button class="btn secondary" onclick="showLastSnapshot()">Show Last Snapshot</button>
+                <button class="btn danger" onclick="clearSnapshots()">Clear All</button>
+            </div>
+
+            <div class="stats">
+                <div class="stat">
+                    <span class="stat-value" id="component-count">0</span>
+                    <span class="stat-label">Components</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value" id="patch-count">0</span>
+                    <span class="stat-label">Patches</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value" id="snapshot-size">0 KB</span>
+                    <span class="stat-label">Snapshot Size</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value" id="capture-time">0ms</span>
+                    <span class="stat-label">Capture Time</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Customization -->
+        <div class="demo-section">
+            <h2>🤖 AI-Powered Customization</h2>
+            <p>Use natural language to modify the design. Changes are tracked and serialized for embedding context.</p>
+            
+            <div class="controls">
+                <button class="btn" onclick="toggleSelectMode()">Toggle Select Mode</button>
+                <button class="btn secondary" onclick="aiCustomize('Make the cards more colorful')">Make Cards Colorful</button>
+                <button class="btn secondary" onclick="aiCustomize('Increase the text size')">Larger Text</button>
+                <button class="btn secondary" onclick="aiCustomize('Add more spacing')">More Spacing</button>
+            </div>
+
+            <div class="grid-layout">
+                <div>
+                    <h4>Snapshot Tree</h4>
+                    <div class="snapshot-viewer" id="snapshot-tree">
+                        <div class="snapshot-tree">No snapshot created yet</div>
+                    </div>
+                </div>
+                <div>
+                    <h4>Recent Diff</h4>
+                    <div class="snapshot-viewer" id="diff-viewer">
+                        <div class="diff-viewer">No diffs generated yet</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sample Content for Testing -->
+        <div class="demo-section">
+            <h2>🎨 Sample Content</h2>
+            <p>This content demonstrates the serialization system. Click elements to select them, then use AI commands above.</p>
+            
+            <div class="sample-content">
+                <div class="card customizable" data-description="Feature card about performance">
+                    <h3>⚡ Performance</h3>
+                    <p>Lightning-fast DOM capture and serialization with intelligent caching and diff-based updates for optimal performance.</p>
+                </div>
+
+                <div class="card customizable" data-description="Feature card about intelligence">
+                    <h3>🧠 Intelligence</h3>
+                    <p>AI-powered context awareness with complete website state understanding for smarter customization suggestions.</p>
+                </div>
+
+                <div class="card customizable" data-description="Feature card about flexibility">
+                    <h3>🔧 Flexibility</h3>
+                    <p>Non-destructive overlay system that preserves original code while enabling powerful customization capabilities.</p>
+                </div>
+
+                <div class="card customizable" data-description="Feature card about integration">
+                    <h3>🔗 Integration</h3>
+                    <p>Seamless integration with existing websites through lightweight interceptor layer and embedding synchronization.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Debug Output -->
+        <div class="demo-section">
+            <h2>🔧 Debug Output</h2>
+            <div class="output" id="debug-output">Ready to serialize website state...\n\nTry creating a snapshot to see the full component tree, styles, layout structure, and customization data.</div>
+        </div>
+    </div>
+
+    <!-- Include InterceptJS -->
+    <script src="../dist/interceptjs.iife.js"></script>
+    
+    <script>
+        // Initialize InterceptJS with serialization
+        let intercept = null;
+        let snapshots = [];
+        let selectModeActive = false;
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            try {
+                // Initialize InterceptJS with debug mode
+                intercept = window.InterceptJS.init({
+                    root: document.querySelector('.container'),
+                    debug: true,
+                    uidAttribute: 'data-uid',
+                    descriptionAttribute: 'data-description',
+                    onSelect: (element) => {
+                        log(`Selected: ${element ? element.tag + ' (' + element.description + ')' : 'none'}`);
+                        updateSelection(element);
+                    }
+                });
+
+                log('InterceptJS initialized with serialization support');
+                updateStats();
+
+            } catch (error) {
+                log(`Error initializing InterceptJS: ${error.message}`, 'error');
+            }
+        });
+
+        // Snapshot Management
+        function createSnapshot() {
+            if (!intercept) {
+                log('InterceptJS not initialized', 'error');
+                return;
+            }
+
+            try {
+                const startTime = performance.now();
+                
+                const snapshot = intercept.createSnapshot(
+                    'demo-website-' + Date.now(),
+                    'demo-user',
+                    'session-' + Date.now()
+                );
+
+                const endTime = performance.now();
+                const captureTime = Math.round(endTime - startTime);
+
+                snapshots.push(snapshot);
+                
+                log(`Snapshot created in ${captureTime}ms`);
+                log(`Components: ${snapshot.components.length}`);
+                log(`Patches: ${snapshot.userCustomizations.patches.length}`);
+                log(`Metadata: ${JSON.stringify(snapshot.metadata.componentCounts, null, 2)}`);
+
+                updateStats();
+                displaySnapshotTree(snapshot);
+                showNotification('Snapshot created successfully!');
+
+            } catch (error) {
+                log(`Error creating snapshot: ${error.message}`, 'error');
+                showNotification('Error creating snapshot', 'error');
+            }
+        }
+
+        function createDiff() {
+            if (!intercept) {
+                log('InterceptJS not initialized', 'error');
+                return;
+            }
+
+            try {
+                const diff = intercept.createDiff();
+                
+                if (diff) {
+                    log(`Diff created between versions ${diff.fromVersion} -> ${diff.toVersion}`);
+                    log(`Component changes: +${diff.components.added.length} ~${diff.components.modified.length} -${diff.components.removed.length}`);
+                    
+                    displayDiff(diff);
+                    showNotification('Diff generated successfully!');
+                } else {
+                    log('No previous snapshot found for diff generation');
+                    showNotification('Create a snapshot first', 'error');
+                }
+
+            } catch (error) {
+                log(`Error creating diff: ${error.message}`, 'error');
+            }
+        }
+
+        function showLastSnapshot() {
+            if (!intercept) return;
+
+            const lastSnapshot = intercept.lastSnapshot;
+            if (lastSnapshot) {
+                log('Last Snapshot:');
+                log(JSON.stringify({
+                    version: lastSnapshot.metadata.version,
+                    timestamp: new Date(lastSnapshot.metadata.timestamp).toLocaleString(),
+                    componentCount: lastSnapshot.components.length,
+                    patchCount: lastSnapshot.userCustomizations.patches.length
+                }, null, 2));
+
+                displaySnapshotTree(lastSnapshot);
+            } else {
+                log('No snapshots created yet');
+            }
+        }
+
+        function clearSnapshots() {
+            snapshots = [];
+            log('All snapshots cleared');
+            document.getElementById('snapshot-tree').innerHTML = '<div class="snapshot-tree">No snapshots</div>';
+            document.getElementById('diff-viewer').innerHTML = '<div class="diff-viewer">No diffs</div>';
+            updateStats();
+        }
+
+        // AI Customization
+        async function aiCustomize(prompt) {
+            if (!intercept) {
+                log('InterceptJS not initialized', 'error');
+                return;
+            }
+
+            try {
+                log(`AI Prompt: "${prompt}"`);
+                
+                // Create a snapshot before changes
+                const beforeSnapshot = intercept.createSnapshot('before-' + Date.now(), 'demo-user');
+                
+                // Simulate AI customization with manual patches for demo
+                const patches = generateDemoPatches(prompt);
+                
+                if (patches.length > 0) {
+                    const result = intercept.patch(patches);
+                    log(`Applied ${patches.length} patches from AI`);
+                    
+                    if (result.warnings.length > 0) {
+                        log(`Warnings: ${result.warnings.join(', ')}`);
+                    }
+
+                    // Create snapshot after changes
+                    const afterSnapshot = intercept.createSnapshot('after-' + Date.now(), 'demo-user');
+                    
+                    // Generate diff
+                    setTimeout(() => {
+                        createDiff();
+                    }, 100);
+
+                    showNotification('AI customization applied!');
+                } else {
+                    log('No patches generated for this prompt');
+                }
+
+            } catch (error) {
+                log(`Error with AI customization: ${error.message}`, 'error');
+            }
+        }
+
+        function toggleSelectMode() {
+            if (!intercept) return;
+
+            selectModeActive = intercept.toggleSelect();
+            log(`Select mode: ${selectModeActive ? 'ON' : 'OFF'}`);
+            
+            const btn = event.target;
+            btn.textContent = selectModeActive ? 'Exit Select Mode' : 'Toggle Select Mode';
+            btn.className = selectModeActive ? 'btn danger' : 'btn';
+            
+            showNotification(`Select mode ${selectModeActive ? 'enabled' : 'disabled'}`);
+        }
+
+        // Demo patch generation
+        function generateDemoPatches(prompt) {
+            const patches = [];
+            const cards = document.querySelectorAll('.card');
+            
+            if (prompt.includes('colorful')) {
+                cards.forEach((card, index) => {
+                    const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57'];
+                    patches.push({
+                        op: 'restyle',
+                        target: card.getAttribute('data-uid') || `card-${index}`,
+                        payload: {
+                            styles: {
+                                'border-left-color': colors[index % colors.length],
+                                'background': colors[index % colors.length] + '10'
+                            }
+                        },
+                        source: 'ai'
+                    });
+                });
+            }
+            
+            if (prompt.includes('text size') || prompt.includes('larger')) {
+                cards.forEach((card, index) => {
+                    patches.push({
+                        op: 'restyle',
+                        target: card.getAttribute('data-uid') || `card-${index}`,
+                        payload: {
+                            styles: {
+                                'font-size': '1.1em'
+                            }
+                        },
+                        source: 'ai'
+                    });
+                });
+            }
+            
+            if (prompt.includes('spacing')) {
+                cards.forEach((card, index) => {
+                    patches.push({
+                        op: 'restyle',
+                        target: card.getAttribute('data-uid') || `card-${index}`,
+                        payload: {
+                            styles: {
+                                'margin': '16px',
+                                'padding': '28px'
+                            }
+                        },
+                        source: 'ai'
+                    });
+                });
+            }
+            
+            return patches;
+        }
+
+        // Display Functions
+        function displaySnapshotTree(snapshot) {
+            const container = document.getElementById('snapshot-tree');
+            let html = '<div class="snapshot-tree">';
+            
+            html += `<div class="tree-node"><strong>Snapshot ${snapshot.metadata.version}</strong></div>`;
+            html += `<div class="tree-node">📅 ${new Date(snapshot.metadata.timestamp).toLocaleString()}</div>`;
+            html += `<div class="tree-node">📊 ${snapshot.components.length} components</div>`;
+            html += `<div class="tree-node">🎨 ${snapshot.userCustomizations.patches.length} patches</div>`;
+            html += '<br>';
+            
+            // Display component tree
+            snapshot.components.slice(0, 10).forEach(component => {
+                html += `<div class="tree-node">`;
+                html += `<span class="tree-node-element">&lt;${component.element.tag}&gt;</span>`;
+                if (component.element.attributes.class) {
+                    html += ` <span class="tree-node-props">.${component.element.attributes.class.split(' ').join('.')}</span>`;
+                }
+                html += `</div>`;
+                
+                if (component.element.children.length > 0) {
+                    html += `<div class="tree-node" style="margin-left: 40px; color: #718096;">`;
+                    html += `${component.element.children.length} children`;
+                    html += `</div>`;
+                }
+            });
+            
+            if (snapshot.components.length > 10) {
+                html += `<div class="tree-node" style="color: #718096;">... and ${snapshot.components.length - 10} more</div>`;
+            }
+            
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function displayDiff(diff) {
+            const container = document.getElementById('diff-viewer');
+            let html = '<div class="diff-viewer">';
+            
+            html += `<div>📈 Diff: ${diff.fromVersion} → ${diff.toVersion}</div><br>`;
+            
+            if (diff.components.added.length > 0) {
+                html += `<div class="diff-added">+ Added ${diff.components.added.length} components</div>`;
+            }
+            
+            if (diff.components.modified.length > 0) {
+                html += `<div class="diff-modified">~ Modified ${diff.components.modified.length} components:</div>`;
+                diff.components.modified.slice(0, 5).forEach(mod => {
+                    html += `<div class="diff-modified" style="margin-left: 20px;">  ${mod.uid}</div>`;
+                });
+            }
+            
+            if (diff.components.removed.length > 0) {
+                html += `<div class="diff-removed">- Removed ${diff.components.removed.length} components</div>`;
+            }
+            
+            if (diff.customizations.patches.added.length > 0) {
+                html += `<br><div class="diff-added">+ ${diff.customizations.patches.added.length} new patches</div>`;
+            }
+            
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function updateStats() {
+            const lastSnapshot = intercept ? intercept.lastSnapshot : null;
+            
+            document.getElementById('component-count').textContent = 
+                lastSnapshot ? lastSnapshot.components.length : 0;
+            
+            document.getElementById('patch-count').textContent = 
+                lastSnapshot ? lastSnapshot.userCustomizations.patches.length : 0;
+            
+            document.getElementById('snapshot-size').textContent = 
+                lastSnapshot ? Math.round(JSON.stringify(lastSnapshot).length / 1024) + ' KB' : '0 KB';
+            
+            document.getElementById('capture-time').textContent = 
+                lastSnapshot ? lastSnapshot.metadata.performanceMetrics.captureTime + 'ms' : '0ms';
+        }
+
+        function updateSelection(element) {
+            // Remove previous selection
+            document.querySelectorAll('.customizable.selected').forEach(el => {
+                el.classList.remove('selected');
+            });
+
+            // Add selection to current element
+            if (element && element.uid) {
+                const domElement = document.querySelector(`[data-uid="${element.uid}"]`);
+                if (domElement) {
+                    domElement.classList.add('selected');
+                }
+            }
+        }
+
+        function log(message, type = 'info') {
+            const output = document.getElementById('debug-output');
+            const timestamp = new Date().toLocaleTimeString();
+            const prefix = type === 'error' ? '❌' : type === 'success' ? '✅' : '📝';
+            
+            output.textContent += `\n${prefix} [${timestamp}] ${message}`;
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function showNotification(message, type = 'success') {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.className = `notification show ${type}`;
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 3000);
+        }
+
+        // Add some interactivity to demo
+        document.addEventListener('click', (e) => {
+            if (e.target.closest('.customizable') && !selectModeActive) {
+                const card = e.target.closest('.customizable');
+                card.style.transform = 'scale(0.98)';
+                
+                setTimeout(() => {
+                    card.style.transform = '';
+                }, 150);
+            }
+        });
+    </script>
+</body>
+</html>

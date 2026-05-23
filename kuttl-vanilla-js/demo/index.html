@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VEKTOR — Analytics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f5f5f2;
+    --surface: #ffffff;
+    --panel: #ffffff;
+    --border: #e4e4e0;
+    --border-hi: #d0d0ca;
+    --text: #1a1a18;
+    --muted: #8a8a84;
+    --dim: #c0c0bc;
+    --accent: #5b52f0;
+    --accent-lo: rgba(91,82,240,0.08);
+    --green: #1b8f5e;
+    --green-lo: rgba(27,143,94,0.08);
+    --red: #c93535;
+    --red-lo: rgba(201,53,53,0.08);
+    --amber: #b56c10;
+    --amber-lo: rgba(181,108,16,0.08);
+    font-family: 'Syne', 'Segoe UI', sans-serif;
+    }
+
+    html, body { height: 100%; }
+
+    body {
+      font-family: 'Syne', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* ── TOPBAR ── */
+    #topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 32px;
+      height: 56px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    #brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+
+    #brand-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 10px var(--accent);
+      animation: pulse 2.4s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--accent); }
+      50% { opacity: 0.5; box-shadow: 0 0 2px var(--accent); }
+    }
+
+    #topbar-nav {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .top-tab {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.68rem;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      padding: 6px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      border: none;
+      background: none;
+      transition: color 0.2s, background 0.2s;
+    }
+
+    .top-tab:hover { color: var(--text); background: var(--border); }
+    .top-tab.active { color: var(--accent); background: var(--accent-lo); }
+
+    #topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    #period-badge {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.65rem;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      padding: 5px 12px;
+      border-radius: 4px;
+    }
+
+    #avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), #a78bfa);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.65rem;
+      font-weight: 700;
+      color: white;
+    }
+
+    /* ── LAYOUT ── */
+    #page {
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      flex: 1;
+      overflow: hidden;
+      height: calc(100vh - 56px);
+    }
+
+    /* ── SIDEBAR ── */
+    #sidebar {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 24px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      overflow-y: auto;
+    }
+
+    .sidebar-section {
+      padding: 0 16px;
+      margin-bottom: 6px;
+    }
+
+    .sidebar-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.55rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--dim);
+      padding: 0 8px;
+      margin-bottom: 4px;
+    }
+
+    .sidebar-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+      text-decoration: none;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 500;
+      border: none;
+      background: none;
+      width: 100%;
+      text-align: left;
+    }
+
+    .sidebar-item:hover { background: var(--border); color: var(--text); }
+    .sidebar-item.active { background: var(--accent-lo); color: var(--accent); }
+
+    .sidebar-item svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+    .sidebar-item .item-count {
+      margin-left: auto;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.6rem;
+      color: var(--dim);
+    }
+
+    .sidebar-item.active .item-count { color: var(--accent); opacity: 0.6; }
+
+    /* ── MAIN CONTENT ── */
+    #main {
+      overflow-y: auto;
+      padding: 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* ── PAGE HEADER ── */
+    #page-header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+    }
+
+    #page-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1;
+    }
+
+    #page-sub {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--muted);
+      margin-top: 6px;
+      letter-spacing: 0.05em;
+    }
+
+    #header-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      font-family: 'Syne', sans-serif;
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+      letter-spacing: 0.04em;
+    }
+
+    .btn-ghost {
+      background: var(--panel);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+
+    .btn-ghost:hover { color: var(--text); border-color: var(--border-hi); }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    .btn-primary:hover { background: #7c74ff; }
+
+    /* ── STAT CARDS ── */
+    #stats-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    .stat-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 22px 24px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+
+    .stat-card:hover { border-color: var(--border-hi); }
+
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+    }
+
+    .stat-card.accent::before { background: linear-gradient(90deg, transparent, var(--accent), transparent); }
+    .stat-card.green::before  { background: linear-gradient(90deg, transparent, var(--green), transparent); }
+    .stat-card.red::before    { background: linear-gradient(90deg, transparent, var(--red), transparent); }
+    .stat-card.amber::before  { background: linear-gradient(90deg, transparent, var(--amber), transparent); }
+
+    .stat-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.6rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    .stat-value {
+      font-size: 1.9rem;
+      font-weight: 800;
+      color: var(--text);
+      line-height: 1;
+      letter-spacing: -0.02em;
+    }
+
+    .stat-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .stat-delta {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.65rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 400;
+    }
+
+    .stat-delta.up   { background: var(--green-lo); color: var(--green); }
+    .stat-delta.down { background: var(--red-lo);   color: var(--red);   }
+
+    .stat-period {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.6rem;
+      color: var(--dim);
+    }
+
+    .stat-sparkline {
+      position: absolute;
+      bottom: 0; right: 0;
+      opacity: 0.4;
+    }
+
+    /* ── MAIN CHART AREA ── */
+    #chart-section {
+      display: grid;
+      grid-template-columns: 1fr 300px;
+      gap: 16px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .panel-title {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .panel-meta {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.6rem;
+      color: var(--muted);
+    }
+
+    .panel-body {
+      padding: 24px;
+    }
+
+    /* ── CHART ── */
+    #chart-canvas-wrap {
+      position: relative;
+      height: 220px;
+    }
+
+    #chart-svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .chart-bar {
+      transition: opacity 0.2s;
+      cursor: pointer;
+    }
+
+    .chart-bar:hover { opacity: 0.7; }
+
+    .chart-x-labels {
+      display: flex;
+      justify-content: space-between;
+      padding: 0 0;
+      margin-top: 8px;
+    }
+
+    .chart-x-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.55rem;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+    }
+
+    /* ── DONUT CHART ── */
+    #donut-wrap {
+      position: relative;
+      width: 140px;
+      height: 140px;
+      margin: 0 auto 20px;
+    }
+
+    #donut-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+
+    #donut-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #donut-pct {
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: var(--text);
+      line-height: 1;
+    }
+
+    #donut-sub {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.5rem;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      margin-top: 2px;
+    }
+
+    .donut-legend {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .donut-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .donut-row-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .donut-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    .donut-name {
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    .donut-val {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.68rem;
+      color: var(--text);
+    }
+
+    /* ── BOTTOM ROW ── */
+    #bottom-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    /* ── TABLE ── */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .data-table th {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.55rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--dim);
+      text-align: left;
+      padding: 0 0 12px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 400;
+    }
+
+    .data-table th:not(:first-child) { text-align: right; }
+
+    .data-table td {
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    .data-table tr:last-child td { border-bottom: none; }
+
+    .data-table td:not(:first-child) {
+      text-align: right;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--muted);
+    }
+
+    .row-page {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .row-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.6rem;
+      background: var(--border);
+    }
+
+    .bar-mini {
+      display: inline-block;
+      height: 3px;
+      border-radius: 2px;
+      background: var(--accent);
+      opacity: 0.5;
+      vertical-align: middle;
+      margin-left: 6px;
+    }
+
+    /* ── FEED ── */
+    .feed-item {
+      display: flex;
+      gap: 12px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .feed-item:last-child { border-bottom: none; }
+
+    .feed-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 0.75rem;
+    }
+
+    .feed-icon.green { background: var(--green-lo); }
+    .feed-icon.accent { background: var(--accent-lo); }
+    .feed-icon.amber { background: var(--amber-lo); }
+    .feed-icon.red { background: var(--red-lo); }
+
+    .feed-text {
+      flex: 1;
+    }
+
+    .feed-main {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .feed-main span { color: var(--accent); }
+
+    .feed-time {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.58rem;
+      color: var(--dim);
+      margin-top: 2px;
+    }
+
+    /* ── STATUS BAR ── */
+    #status-bar {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      padding: 10px 32px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.58rem;
+      color: var(--dim);
+      letter-spacing: 0.05em;
+      flex-shrink: 0;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      display: inline-block;
+      margin-right: 5px;
+      box-shadow: 0 0 6px var(--green);
+    }
+
+    .status-sep {
+      width: 1px;
+      height: 12px;
+      background: var(--border);
+    }
+
+    /* ── ANIMATIONS ── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .stat-card  { animation: fadeUp 0.4s ease both; }
+    .stat-card:nth-child(1) { animation-delay: 0.05s; }
+    .stat-card:nth-child(2) { animation-delay: 0.10s; }
+    .stat-card:nth-child(3) { animation-delay: 0.15s; }
+    .stat-card:nth-child(4) { animation-delay: 0.20s; }
+
+    #chart-section, #bottom-row { animation: fadeUp 0.4s 0.25s ease both; }
+  </style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<header id="topbar" data-uid="topbar">
+  <div id="brand" data-uid="brand">
+    <div id="brand-dot" data-uid="brand-dot"></div>
+    <span data-uid="brand-name">Vektor</span>
+  </div>
+
+  <nav id="topbar-nav" data-uid="topbar-nav">
+    <button class="top-tab active" data-uid="tab-overview">Overview</button>
+    <button class="top-tab" data-uid="tab-audience">Audience</button>
+    <button class="top-tab" data-uid="tab-acquisition">Acquisition</button>
+    <button class="top-tab" data-uid="tab-behavior">Behavior</button>
+    <button class="top-tab" data-uid="tab-conversions">Conversions</button>
+  </nav>
+
+  <div id="topbar-right" data-uid="topbar-right">
+    <span id="period-badge" data-uid="period-badge">Last 30 days</span>
+    <div id="avatar" data-uid="avatar">SL</div>
+  </div>
+</header>
+
+<!-- PAGE LAYOUT -->
+<div id="page" data-uid="page">
+
+  <!-- SIDEBAR -->
+  <aside id="sidebar" data-uid="sidebar">
+    <div class="sidebar-section" data-uid="sidebar-sec-main">
+      <p class="sidebar-label" data-uid="sidebar-label-main">Analytics</p>
+      <button class="sidebar-item active" data-uid="sidebar-dashboard">
+        <svg viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+        Dashboard
+        <span class="item-count">—</span>
+      </button>
+      <button class="sidebar-item" data-uid="sidebar-realtime">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><polyline points="8,5 8,8 10,10"/></svg>
+        Real-time
+        <span class="item-count">143</span>
+      </button>
+      <button class="sidebar-item" data-uid="sidebar-pages">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="1" width="12" height="14" rx="1"/><line x1="5" y1="5" x2="11" y2="5"/><line x1="5" y1="8" x2="11" y2="8"/><line x1="5" y1="11" x2="8" y2="11"/></svg>
+        Pages
+        <span class="item-count">84</span>
+      </button>
+      <button class="sidebar-item" data-uid="sidebar-events">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1,11 5,6 9,9 15,2"/></svg>
+        Events
+        <span class="item-count">29</span>
+      </button>
+    </div>
+
+    <div class="sidebar-section" data-uid="sidebar-sec-reports">
+      <p class="sidebar-label" data-uid="sidebar-label-reports">Reports</p>
+      <button class="sidebar-item" data-uid="sidebar-funnel">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="1,1 15,1 10,8 10,14 6,14 6,8"/></svg>
+        Funnels
+      </button>
+      <button class="sidebar-item" data-uid="sidebar-cohorts">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5" cy="6" r="3"/><circle cx="11" cy="6" r="3"/><path d="M0,14 C0,11 2.5,9 5,9 C7.5,9 8.5,9 11,9 C13.5,9 16,11 16,14"/></svg>
+        Cohorts
+      </button>
+      <button class="sidebar-item" data-uid="sidebar-export">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8,1 L8,10 M5,7 L8,10 L11,7"/><path d="M2,12 L2,14 L14,14 L14,12"/></svg>
+        Export
+      </button>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main id="main" data-uid="main">
+
+    <!-- Page header -->
+    <div id="page-header" data-uid="page-header">
+      <div data-uid="page-title-wrap">
+        <h1 id="page-title" data-uid="page-title">Overview</h1>
+        <p id="page-sub" data-uid="page-sub">May 5, 2026 · Synced 2 minutes ago</p>
+      </div>
+      <div id="header-actions" data-uid="header-actions">
+        <button class="btn btn-ghost" data-uid="btn-filter">Filter</button>
+        <button class="btn btn-ghost" data-uid="btn-compare">Compare</button>
+        <button class="btn btn-primary" data-uid="btn-report">Export Report</button>
+      </div>
+    </div>
+
+    <!-- Stat cards -->
+    <div id="stats-row" data-uid="stats-row">
+      <div class="stat-card accent" data-uid="stat-visitors">
+        <p class="stat-label" data-uid="stat-label-1">Unique Visitors</p>
+        <p class="stat-value" data-uid="stat-value-1">84,219</p>
+        <div class="stat-meta" data-uid="stat-meta-1">
+          <span class="stat-delta up" data-uid="stat-delta-1">↑ 12.4%</span>
+          <span class="stat-period" data-uid="stat-period-1">vs last period</span>
+        </div>
+        <svg class="stat-sparkline" width="80" height="40" viewBox="0 0 80 40">
+          <polyline points="0,35 10,28 20,30 30,18 40,22 50,12 60,16 70,8 80,10"
+            fill="none" stroke="#6c63ff" stroke-width="1.5"/>
+        </svg>
+      </div>
+
+      <div class="stat-card green" data-uid="stat-sessions">
+        <p class="stat-label" data-uid="stat-label-2">Sessions</p>
+        <p class="stat-value" data-uid="stat-value-2">136.8k</p>
+        <div class="stat-meta" data-uid="stat-meta-2">
+          <span class="stat-delta up" data-uid="stat-delta-2">↑ 8.1%</span>
+          <span class="stat-period" data-uid="stat-period-2">vs last period</span>
+        </div>
+        <svg class="stat-sparkline" width="80" height="40" viewBox="0 0 80 40">
+          <polyline points="0,30 10,26 20,32 30,20 40,18 50,22 60,10 70,14 80,8"
+            fill="none" stroke="#3ecf8e" stroke-width="1.5"/>
+        </svg>
+      </div>
+
+      <div class="stat-card red" data-uid="stat-bounce">
+        <p class="stat-label" data-uid="stat-label-3">Bounce Rate</p>
+        <p class="stat-value" data-uid="stat-value-3">38.2%</p>
+        <div class="stat-meta" data-uid="stat-meta-3">
+          <span class="stat-delta down" data-uid="stat-delta-3">↓ 3.7%</span>
+          <span class="stat-period" data-uid="stat-period-3">vs last period</span>
+        </div>
+        <svg class="stat-sparkline" width="80" height="40" viewBox="0 0 80 40">
+          <polyline points="0,15 10,20 20,14 30,22 40,18 50,28 60,20 70,30 80,24"
+            fill="none" stroke="#f56565" stroke-width="1.5"/>
+        </svg>
+      </div>
+
+      <div class="stat-card amber" data-uid="stat-duration">
+        <p class="stat-label" data-uid="stat-label-4">Avg. Duration</p>
+        <p class="stat-value" data-uid="stat-value-4">3m 42s</p>
+        <div class="stat-meta" data-uid="stat-meta-4">
+          <span class="stat-delta up" data-uid="stat-delta-4">↑ 0.8%</span>
+          <span class="stat-period" data-uid="stat-period-4">vs last period</span>
+        </div>
+        <svg class="stat-sparkline" width="80" height="40" viewBox="0 0 80 40">
+          <polyline points="0,28 10,24 20,26 30,20 40,22 50,16 60,18 70,12 80,14"
+            fill="none" stroke="#f6ad55" stroke-width="1.5"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Chart + Donut -->
+    <div id="chart-section" data-uid="chart-section">
+      <div class="panel" data-uid="panel-chart">
+        <div class="panel-header" data-uid="chart-header">
+          <span class="panel-title" data-uid="chart-title">Visitor Trend</span>
+          <span class="panel-meta" data-uid="chart-meta">Daily · Apr 5 – May 5</span>
+        </div>
+        <div class="panel-body" data-uid="chart-body">
+          <div id="chart-canvas-wrap" data-uid="chart-canvas-wrap">
+            <svg id="chart-svg" viewBox="0 0 600 200" preserveAspectRatio="none" data-uid="chart-svg">
+              <!-- Grid lines -->
+              <line x1="0" y1="50"  x2="600" y2="50"  stroke="#1e1e27" stroke-width="1"/>
+              <line x1="0" y1="100" x2="600" y2="100" stroke="#1e1e27" stroke-width="1"/>
+              <line x1="0" y1="150" x2="600" y2="150" stroke="#1e1e27" stroke-width="1"/>
+
+              <!-- Area fill -->
+              <defs>
+                <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#6c63ff" stop-opacity="0.18"/>
+                  <stop offset="100%" stop-color="#6c63ff" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+
+              <path d="M0,170 L25,155 L55,140 L80,150 L110,120 L135,130 L165,105 L190,115 L220,90 L245,100 L275,75 L300,85 L330,60 L355,72 L385,50 L410,65 L440,45 L465,55 L495,35 L520,48 L550,28 L575,38 L600,20 L600,200 L0,200 Z"
+                fill="url(#areaGrad)"/>
+
+              <!-- Line -->
+              <polyline points="0,170 25,155 55,140 80,150 110,120 135,130 165,105 190,115 220,90 245,100 275,75 300,85 330,60 355,72 385,50 410,65 440,45 465,55 495,35 520,48 550,28 575,38 600,20"
+                fill="none" stroke="#6c63ff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+
+              <!-- Data points -->
+              <circle cx="600" cy="20" r="4" fill="#6c63ff"/>
+              <circle cx="600" cy="20" r="8" fill="#6c63ff" opacity="0.2"/>
+            </svg>
+          </div>
+          <div class="chart-x-labels" data-uid="chart-labels">
+            <span class="chart-x-label">Apr 5</span>
+            <span class="chart-x-label">Apr 12</span>
+            <span class="chart-x-label">Apr 19</span>
+            <span class="chart-x-label">Apr 26</span>
+            <span class="chart-x-label">May 5</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" data-uid="panel-channels">
+        <div class="panel-header" data-uid="channels-header">
+          <span class="panel-title" data-uid="channels-title">Traffic Channels</span>
+        </div>
+        <div class="panel-body" data-uid="channels-body">
+          <div id="donut-wrap" data-uid="donut-wrap">
+            <svg id="donut-svg" viewBox="0 0 100 100" data-uid="donut-svg">
+              <!-- Organic Search: 42% -->
+              <circle cx="50" cy="50" r="38" fill="none" stroke="#6c63ff" stroke-width="10"
+                stroke-dasharray="100.5 138.7" stroke-dashoffset="0"/>
+              <!-- Direct: 24% -->
+              <circle cx="50" cy="50" r="38" fill="none" stroke="#3ecf8e" stroke-width="10"
+                stroke-dasharray="57.4 181.8" stroke-dashoffset="-100.5"/>
+              <!-- Social: 18% -->
+              <circle cx="50" cy="50" r="38" fill="none" stroke="#f6ad55" stroke-width="10"
+                stroke-dasharray="43.1 196.1" stroke-dashoffset="-157.9"/>
+              <!-- Referral: 16% -->
+              <circle cx="50" cy="50" r="38" fill="none" stroke="#a78bfa" stroke-width="10"
+                stroke-dasharray="38.3 200.9" stroke-dashoffset="-201"/>
+            </svg>
+            <div id="donut-center" data-uid="donut-center">
+              <span id="donut-pct" data-uid="donut-pct">84k</span>
+              <span id="donut-sub" data-uid="donut-sub">visitors</span>
+            </div>
+          </div>
+
+          <div class="donut-legend" data-uid="donut-legend">
+            <div class="donut-row" data-uid="donut-row-1">
+              <div class="donut-row-left">
+                <div class="donut-dot" style="background:#6c63ff"></div>
+                <span class="donut-name">Organic</span>
+              </div>
+              <span class="donut-val">42%</span>
+            </div>
+            <div class="donut-row" data-uid="donut-row-2">
+              <div class="donut-row-left">
+                <div class="donut-dot" style="background:#3ecf8e"></div>
+                <span class="donut-name">Direct</span>
+              </div>
+              <span class="donut-val">24%</span>
+            </div>
+            <div class="donut-row" data-uid="donut-row-3">
+              <div class="donut-row-left">
+                <div class="donut-dot" style="background:#f6ad55"></div>
+                <span class="donut-name">Social</span>
+              </div>
+              <span class="donut-val">18%</span>
+            </div>
+            <div class="donut-row" data-uid="donut-row-4">
+              <div class="donut-row-left">
+                <div class="donut-dot" style="background:#a78bfa"></div>
+                <span class="donut-name">Referral</span>
+              </div>
+              <span class="donut-val">16%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom row -->
+    <div id="bottom-row" data-uid="bottom-row">
+      <!-- Top pages table -->
+      <div class="panel" data-uid="panel-pages">
+        <div class="panel-header" data-uid="pages-header">
+          <span class="panel-title" data-uid="pages-title">Top Pages</span>
+          <span class="panel-meta" data-uid="pages-meta">by pageviews</span>
+        </div>
+        <div class="panel-body" data-uid="pages-body">
+          <table class="data-table" data-uid="pages-table">
+            <thead>
+              <tr>
+                <th data-uid="th-page">Page</th>
+                <th data-uid="th-views">Views</th>
+                <th data-uid="th-uniq">Unique</th>
+                <th data-uid="th-rate">Rate</th>
+              </tr>
+            </thead>
+            <tbody data-uid="pages-tbody">
+              <tr data-uid="tr-1">
+                <td><div class="row-page"><span class="row-icon">🏠</span>/home</div></td>
+                <td>22,401<div class="bar-mini" style="width:64px"></div></td>
+                <td>18,920</td>
+                <td style="color:var(--green)">32.1%</td>
+              </tr>
+              <tr data-uid="tr-2">
+                <td><div class="row-page"><span class="row-icon">💼</span>/pricing</div></td>
+                <td>11,847<div class="bar-mini" style="width:34px"></div></td>
+                <td>9,204</td>
+                <td style="color:var(--amber)">44.8%</td>
+              </tr>
+              <tr data-uid="tr-3">
+                <td><div class="row-page"><span class="row-icon">📄</span>/blog</div></td>
+                <td>9,320<div class="bar-mini" style="width:27px"></div></td>
+                <td>7,812</td>
+                <td style="color:var(--green)">28.4%</td>
+              </tr>
+              <tr data-uid="tr-4">
+                <td><div class="row-page"><span class="row-icon">⚙️</span>/docs</div></td>
+                <td>6,104<div class="bar-mini" style="width:18px"></div></td>
+                <td>5,330</td>
+                <td style="color:var(--green)">19.0%</td>
+              </tr>
+              <tr data-uid="tr-5">
+                <td><div class="row-page"><span class="row-icon">📬</span>/contact</div></td>
+                <td>3,872<div class="bar-mini" style="width:11px"></div></td>
+                <td>3,201</td>
+                <td style="color:var(--red)">61.2%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Activity feed -->
+      <div class="panel" data-uid="panel-feed">
+        <div class="panel-header" data-uid="feed-header">
+          <span class="panel-title" data-uid="feed-title">Recent Events</span>
+          <span class="panel-meta" data-uid="feed-meta">live · 143 active</span>
+        </div>
+        <div class="panel-body" data-uid="feed-body">
+          <div class="feed-item" data-uid="feed-1">
+            <div class="feed-icon green" data-uid="feed-icon-1">✓</div>
+            <div class="feed-text" data-uid="feed-text-1">
+              <p class="feed-main"><span>Conversion</span> — /pricing → checkout</p>
+              <p class="feed-time">Just now · Paris, FR</p>
+            </div>
+          </div>
+          <div class="feed-item" data-uid="feed-2">
+            <div class="feed-icon accent" data-uid="feed-icon-2">↗</div>
+            <div class="feed-text" data-uid="feed-text-2">
+              <p class="feed-main">New session started on <span>/blog</span></p>
+              <p class="feed-time">1m ago · London, UK</p>
+            </div>
+          </div>
+          <div class="feed-item" data-uid="feed-3">
+            <div class="feed-icon amber" data-uid="feed-icon-3">!</div>
+            <div class="feed-text" data-uid="feed-text-3">
+              <p class="feed-main">High bounce detected on <span>/docs/v2</span></p>
+              <p class="feed-time">4m ago · auto-detected</p>
+            </div>
+          </div>
+          <div class="feed-item" data-uid="feed-4">
+            <div class="feed-icon green" data-uid="feed-icon-4">✓</div>
+            <div class="feed-text" data-uid="feed-text-4">
+              <p class="feed-main"><span>Goal met</span> — Newsletter signup #1,240</p>
+              <p class="feed-time">9m ago · Toronto, CA</p>
+            </div>
+          </div>
+          <div class="feed-item" data-uid="feed-5">
+            <div class="feed-icon accent" data-uid="feed-icon-5">↗</div>
+            <div class="feed-text" data-uid="feed-text-5">
+              <p class="feed-main">Traffic spike on <span>/home</span> (+38%)</p>
+              <p class="feed-time">14m ago · via organic search</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- STATUS BAR -->
+<div id="status-bar" data-uid="status-bar">
+  <span><span class="status-dot"></span>All systems operational</span>
+  <div class="status-sep"></div>
+  <span>Data refreshes every 60s</span>
+  <div class="status-sep"></div>
+  <span>workspace: <strong style="color:var(--text)">vektor-prod</strong></span>
+  <div class="status-sep"></div>
+  <span id="live-clock" data-uid="live-clock"></span>
+</div>
+
+<script>
+  // Tab switching
+  document.querySelectorAll('.top-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.top-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+    });
+  });
+
+  // Sidebar switching
+  document.querySelectorAll('.sidebar-item').forEach(item => {
+    item.addEventListener('click', () => {
+      document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+      item.classList.add('active');
+    });
+  });
+
+  // Live clock
+  function tick() {
+    const now = new Date();
+    document.getElementById('live-clock').textContent =
+      now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+  tick(); setInterval(tick, 1000);
+</script>
+
+<!-- Cuttlefish — drop in, call init -->
+<script src="../dist/cuttlefish.iife.js"></script>
+<script>
+  Cuttlefish.init({
+    root:       document.getElementById("page"),
+    persistKey: "vektor-analytics",
+    debug:      true, // Enable debug logging to see snapshot activity
+    
+    // AI Configuration
+    ai: {
+      provider: "gemini",
+      apiKey:   "AIzaSyCANn2apFM4VthM1kKS172VB_Nj46GhzuY",
+    },
+    
+    // Enable automatic website snapshotting
+    snapshot: {
+      enabled: true,
+      
+      // Configure the backend API
+      api: {
+        baseUrl: 'http://localhost:8080', // Your Kuttl API server (Docker host port)
+        // apiKey: 'your-api-key-here',   // Optional API key
+        timeout: 10000                    // Request timeout in ms
+      },
+      
+      // Optional: Custom identifiers (auto-detected if not provided)
+      websiteId: 'vektor-analytics-demo',  // Custom website ID
+      // userId: 'demo-user',             // Defaults to auto-detected or anonymous
+      
+      // Optional: Behavior configuration
+      onChanges: true,                     // Create snapshots when patches are applied (default: true)
+      throttleMs: 3000                     // Minimum interval between snapshots (3 seconds for demo)
+    }
+  });
+
+  // Log when snapshot system is ready
+  console.log('%c🔄 Automatic Website Snapshotting Enabled', 'color: #6c63ff; font-weight: bold;');
+  console.log('→ Initial snapshot will be created in 100ms');
+  console.log('→ Snapshots will be sent to http://localhost:8080/api/snapshots');
+  console.log('→ Try making changes with AI prompts to trigger automatic snapshots!');
+</script>
+</body>
+</html>
