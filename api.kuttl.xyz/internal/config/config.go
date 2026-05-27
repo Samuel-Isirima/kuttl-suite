@@ -12,11 +12,11 @@ import (
 
 type Config struct {
 	// Database
-	DatabaseURL                 string
-	DBMaxOpenConns             int
-	DBMaxIdleConns             int
-	DBConnMaxLifetimeMinutes   int
-	DBConnMaxIdleTimeMinutes   int
+	DatabaseURL              string
+	DBMaxOpenConns           int
+	DBMaxIdleConns           int
+	DBConnMaxLifetimeMinutes int
+	DBConnMaxIdleTimeMinutes int
 
 	// JWT
 	JWTSecret      string
@@ -47,14 +47,14 @@ func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		DatabaseURL:                getEnv("DATABASE_URL", ""),
-		DBMaxOpenConns:            getEnvInt("DB_MAX_OPEN_CONNS", 25),
-		DBMaxIdleConns:            getEnvInt("DB_MAX_IDLE_CONNS", 5),
-		DBConnMaxLifetimeMinutes:  getEnvInt("DB_CONN_MAX_LIFETIME_MINUTES", 5),
-		DBConnMaxIdleTimeMinutes:  getEnvInt("DB_CONN_MAX_IDLE_TIME_MINUTES", 2),
-		JWTSecret:                 getEnv("JWT_SECRET", ""),
-		JWTExpiryHours:            getEnvInt("JWT_EXPIRY_HOURS", 24),
-		APITokenPrefix:            getEnv("API_TOKEN_PREFIX", "kuttl_"),
+		DatabaseURL:              getEnv("DATABASE_URL", ""),
+		DBMaxOpenConns:           getEnvInt("DB_MAX_OPEN_CONNS", 25),
+		DBMaxIdleConns:           getEnvInt("DB_MAX_IDLE_CONNS", 5),
+		DBConnMaxLifetimeMinutes: getEnvInt("DB_CONN_MAX_LIFETIME_MINUTES", 5),
+		DBConnMaxIdleTimeMinutes: getEnvInt("DB_CONN_MAX_IDLE_TIME_MINUTES", 2),
+		JWTSecret:                getEnv("JWT_SECRET", ""),
+		JWTExpiryHours:           getEnvInt("JWT_EXPIRY_HOURS", 24),
+		APITokenPrefix:           getEnv("API_TOKEN_PREFIX", "kuttl_"),
 
 		AIProvider:     getEnv("AI_PROVIDER", "openai"),
 		AnthropicKey:   getEnv("ANTHROPIC_API_KEY", ""),
@@ -66,7 +66,7 @@ func Load() (*Config, error) {
 
 		Port:           getEnv("PORT", "8080"),
 		AllowedOrigins: parseAllowedOrigins(getEnv("ALLOWED_ORIGINS", "*")),
-		RateLimit:      getEnvInt("RATE_LIMIT", 5),
+		RateLimit:      getEnvInt("RATE_LIMIT", 300),
 
 		LogLevel: getEnv("LOG_LEVEL", "info"),
 		LogFile:  getEnv("LOG_FILE", "logs/requests.log"),
@@ -147,7 +147,7 @@ func parseAllowedOrigins(originsStr string) []string {
 	if originsStr == "*" {
 		return []string{"*"}
 	}
-	
+
 	origins := strings.Split(originsStr, ",")
 	for i, origin := range origins {
 		origins[i] = strings.TrimSpace(origin)

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CORS Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        button { padding: 10px 20px; margin: 10px; font-size: 16px; }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+        .log { background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        pre { background: #f0f0f0; padding: 10px; border-radius: 3px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>CORS Test for Kuttl API</h1>
+    
+    <div>
+        <button onclick="testPreflight()">Test Preflight (OPTIONS)</button>
+        <button onclick="testRegister()">Test Register API</button>
+        <button onclick="testHealth()">Test Health Check</button>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <div id="log" class="log">
+        <h3>Test Results:</h3>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080';
+        const resultsDiv = document.getElementById('results');
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const div = document.createElement('div');
+            div.className = type;
+            div.innerHTML = `[${timestamp}] ${message}`;
+            resultsDiv.appendChild(div);
+            resultsDiv.scrollTop = resultsDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            resultsDiv.innerHTML = '';
+        }
+
+        async function testPreflight() {
+            log('Testing CORS Preflight (OPTIONS)...', 'info');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/auth/register`, {
+                    method: 'OPTIONS',
+                    headers: {
+                        'Origin': 'http://localhost:5173',
+                        'Access-Control-Request-Method': 'POST',
+                        'Access-Control-Request-Headers': 'Content-Type'
+                    }
+                });
+
+                log(`✅ Preflight Response: ${response.status} ${response.statusText}`, 'success');
+                
+                // Check CORS headers
+                const corsHeaders = {
+                    'Access-Control-Allow-Origin': response.headers.get('Access-Control-Allow-Origin'),
+                    'Access-Control-Allow-Methods': response.headers.get('Access-Control-Allow-Methods'),
+                    'Access-Control-Allow-Headers': response.headers.get('Access-Control-Allow-Headers')
+                };
+                
+                log(`CORS Headers: <pre>${JSON.stringify(corsHeaders, null, 2)}</pre>`, 'info');
+                
+            } catch (error) {
+                log(`❌ Preflight Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testRegister() {
+            log('Testing Register API...', 'info');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/auth/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Origin': 'http://localhost:5173'
+                    },
+                    body: JSON.stringify({
+                        name: 'Test User',
+                        email: 'test@example.com',
+                        password: 'testpassword123'
+                    })
+                });
+
+                log(`✅ Register Response: ${response.status} ${response.statusText}`, 'success');
+                
+                const responseText = await response.text();
+                log(`Response Body: <pre>${responseText}</pre>`, 'info');
+                
+            } catch (error) {
+                log(`❌ Register Error: ${error.message}`, 'error');
+                if (error.message.includes('CORS')) {
+                    log('🚨 This is a CORS error! Check server configuration.', 'error');
+                }
+            }
+        }
+
+        async function testHealth() {
+            log('Testing Health Endpoint...', 'info');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/health`, {
+                    method: 'GET',
+                    headers: {
+                        'Origin': 'http://localhost:5173'
+                    }
+                });
+
+                log(`✅ Health Response: ${response.status} ${response.statusText}`, 'success');
+                
+                const responseText = await response.text();
+                log(`Response Body: <pre>${responseText}</pre>`, 'info');
+                
+            } catch (error) {
+                log(`❌ Health Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Auto-run basic test on page load
+        window.onload = () => {
+            log('🚀 CORS Test Page Loaded', 'info');
+            log('Click buttons above to test different endpoints', 'info');
+        };
+    </script>
+</body>
+</html>

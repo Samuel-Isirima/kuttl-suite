@@ -100,9 +100,12 @@ func GenerateAPIToken(prefix string) (string, string, error) {
 	tokenHash := hex.EncodeToString(hash[:])
 
 	// Return token prefix (first 8 chars for display) and hash
-	tokenPrefix := fullToken[:min(len(fullToken), 8)]
+	prefixLen := 8
+	if len(fullToken) < prefixLen {
+		prefixLen = len(fullToken)
+	}
 	
-	return fullToken, tokenHash, fmt.Errorf("token_prefix:%s", tokenPrefix)
+	return fullToken, tokenHash, nil
 }
 
 // HashAPIToken hashes an API token for storage

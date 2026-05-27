@@ -1,18 +1,16 @@
 import { cn } from "@/lib/utils";
+import { useState, useEffect } from "react";
+import { useLocation } from "react-router";
+import { getStoredUser } from "../lib/api";
 import { 
   BarChart3, 
   Package, 
-  ShoppingCart, 
-  Users, 
-  MessageSquare, 
-  Mail, 
+  User, 
   PieChart, 
   Settings, 
-  HelpCircle,
   ChevronLeft,
   FileText,
   Key,
-  Webhook
 } from "lucide-react";
 
 interface SidebarProps {
@@ -20,30 +18,48 @@ interface SidebarProps {
   onClose?: () => void;
 }
 
-const navigation = [
-  { name: "Dashboard", href: "/", icon: BarChart3, current: true },
-  { name: "Accounts", href: "/accounts", icon: Users },
-  { name: "UI Layers", href: "/ui-layers", icon: Package },
+interface NavigationItem {
+  name: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  current?: boolean;
+  badge?: string;
+}
+
+const navigation: NavigationItem[] = [
+  { name: "Dashboard", href: "/", icon: BarChart3 },
+  { name: "Usage", href: "/usage", icon: Package },
   { name: "Customizations", href: "/customizations", icon: Settings },
-  { name: "API Usage", href: "/api-usage", icon: MessageSquare, badge: "12" },
 ];
 
-const otherItems = [
+const otherItems: NavigationItem[] = [
   { name: "Documentation", href: "/docs", icon: FileText },
   { name: "Analytics", href: "/analytics", icon: PieChart },
-  { name: "Webhooks", href: "/webhooks", icon: Webhook },
   { name: "API Keys", href: "/api-keys", icon: Key },
-  { name: "Changelog", href: "/changelog", icon: FileText },
 ];
 
-const accountItems = [
-  { name: "Account", href: "/account", icon: Settings },
-  { name: "Members", href: "/members", icon: Users },
+const accountItems: NavigationItem[] = [
+  { name: "Profile", href: "/profile", icon: User },
   { name: "Settings", href: "/settings", icon: Settings },
-  { name: "Feedback", href: "/feedback", icon: HelpCircle },
 ];
 
 export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
+  const [user, setUser] = useState<{name: string; email: string} | null>(null);
+  const location = useLocation();
+
+  useEffect(() => {
+    const userData = getStoredUser();
+    if (userData) {
+      setUser(userData);
+    }
+  }, []);
+
+  const isCurrentPath = (href: string) => {
+    if (href === "/") {
+      return location.pathname === "/";
+    }
+    return location.pathname.startsWith(href);
+  };
   return (
     <>
       {/* Mobile backdrop */}
@@ -93,26 +109,29 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                 MAIN MENU
               </h3>
               <nav className="space-y-1">
-                {navigation.map((item) => (
-                  <a
-                    key={item.name}
-                    href={item.href}
-                    className={cn(
-                      "group flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors",
-                      item.current
-                        ? "bg-blue-50 text-blue-600 border-r-2 border-blue-500"
-                        : "text-gray-700 hover:bg-gray-50 hover:text-gray-900"
-                    )}
-                  >
-                    <item.icon className="mr-3 h-5 w-5 flex-shrink-0" />
-                    <span className="flex-1">{item.name}</span>
-                    {item.badge && (
-                      <span className="ml-3 inline-block py-0.5 px-2 text-xs font-medium bg-gray-200 text-gray-800 rounded-full">
-                        {item.badge}
-                      </span>
-                    )}
-                  </a>
-                ))}
+                {navigation.map((item) => {
+                  const isCurrent = isCurrentPath(item.href);
+                  return (
+                    <a
+                      key={item.name}
+                      href={item.href}
+                      className={cn(
+                        "group flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors",
+                        isCurrent
+                          ? "bg-blue-50 text-blue-600 border-blue-500"
+                          : "text-gray-700 hover:bg-gray-50 hover:text-gray-900"
+                      )}
+                    >
+                      <item.icon className="mr-3 h-5 w-5 flex-shrink-0" />
+                      <span className="flex-1">{item.name}</span>
+                      {item.badge && (
+                        <span className="ml-3 inline-block py-0.5 px-2 text-xs font-medium bg-gray-200 text-gray-800 rounded-full">
+                          {item.badge}
+                        </span>
+                      )}
+                    </a>
+                  );
+                })}
               </nav>
             </div>
 
@@ -160,12 +179,12 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
             <div className="flex items-center">
               <div className="flex-shrink-0">
                 <div className="h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-medium">
-                  JK
+                  {user?.name ? user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : 'U'}
                 </div>
               </div>
               <div className="ml-3 flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-900 truncate">
-                  Jevline kief
+                  {user?.name || 'User'}
                 </p>
               </div>
             </div>

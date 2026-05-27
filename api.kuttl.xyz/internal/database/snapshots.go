@@ -1,6 +1,7 @@
 package database
 
 import (
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -71,6 +72,50 @@ func (r *SnapshotRepository) GetLatestSnapshotForWebsite(websiteID string, userI
 	}
 	
 	return &snapshot, nil
+}
+
+// CheckSnapshotDuplicate checks if a snapshot with identical content already exists
+// Returns the existing snapshot ID if found, nil if it's unique
+func (r *SnapshotRepository) CheckSnapshotDuplicate(websiteID string, userID uuid.UUID, snapshot *models.WebsiteSnapshot) (*uuid.UUID, error) {
+	// Get content hashes for comparison
+	componentsHash, stylesHash, layoutHash, customizationsHash, err := r.generateContentHashes(snapshot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate content hashes: %w", err)
+	}
+	
+	// Query for snapshots with identical content within the last 24 hours
+	// (to avoid checking every snapshot ever created)
+	query := `
+		SELECT id, components, styles, layout, customizations
+		FROM website_snapshots 
+		WHERE website_id = $1 AND user_id = $2 
+		AND created_at > NOW() - INTERVAL '24 hours'
+		ORDER BY created_at DESC
+		LIMIT 10
+	`
+	
+	rows, err := r.db.Query(query, websiteID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query recent snapshots: %w", err)
+	}
+	defer rows.Close()
+	
+	for rows.Next() {
+		var id uuid.UUID
+		var componentsJSON, stylesJSON, layoutJSON, customizationsJSON string
+		
+		if err := rows.Scan(&id, &componentsJSON, &stylesJSON, &layoutJSON, &customizationsJSON); err != nil {
+			continue // Skip problematic rows
+		}
+		
+		// Compare content hashes
+		if r.compareContentHashes(componentsJSON, stylesJSON, layoutJSON, customizationsJSON, 
+			componentsHash, stylesHash, layoutHash, customizationsHash) {
+			return &id, nil // Found duplicate
+		}
+	}
+	
+	return nil, nil // No duplicate found
 }
 
 // UpdateSnapshot updates an existing website snapshot
@@ -785,4 +830,52 @@ func (r *SnapshotRepository) GetWebsiteContextSummary(websiteID string, userID u
 	var summary map[string]interface{}
 	err = json.Unmarshal([]byte(result.String), &summary)
 	return summary, err
+}
+
+// ─────────────────────────────────────────────
+// Content Hashing for Deduplication
+// ─────────────────────────────────────────────
+
+// generateContentHashes generates content hashes for comparison
+func (r *SnapshotRepository) generateContentHashes(snapshot *models.WebsiteSnapshot) (string, string, string, string, error) {
+	componentsJSON, err := json.Marshal(snapshot.Components)
+	if err != nil {
+		return "", "", "", "", err
+	}
+
+	stylesJSON, err := json.Marshal(snapshot.Styles)
+	if err != nil {
+		return "", "", "", "", err
+	}
+
+	layoutJSON, err := json.Marshal(snapshot.Layout)
+	if err != nil {
+		return "", "", "", "", err
+	}
+
+	customizationsJSON, err := json.Marshal(snapshot.Customizations)
+	if err != nil {
+		return "", "", "", "", err
+	}
+
+	return r.hashContent(string(componentsJSON)),
+		   r.hashContent(string(stylesJSON)),
+		   r.hashContent(string(layoutJSON)),
+		   r.hashContent(string(customizationsJSON)), nil
+}
+
+// compareContentHashes compares content hashes for duplicate detection
+func (r *SnapshotRepository) compareContentHashes(componentsJSON, stylesJSON, layoutJSON, customizationsJSON,
+	componentsHash, stylesHash, layoutHash, customizationsHash string) bool {
+	
+	return r.hashContent(componentsJSON) == componentsHash &&
+		   r.hashContent(stylesJSON) == stylesHash &&
+		   r.hashContent(layoutJSON) == layoutHash &&
+		   r.hashContent(customizationsJSON) == customizationsHash
+}
+
+// hashContent creates a SHA256 hash of content for comparison
+func (r *SnapshotRepository) hashContent(content string) string {
+	hash := sha256.Sum256([]byte(content))
+	return fmt.Sprintf("%x", hash)
 }

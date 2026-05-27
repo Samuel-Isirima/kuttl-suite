@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -24,6 +25,12 @@ type AIHandler struct {
 	embeddings *database.EmbeddingRepository
 	snapshots  *database.SnapshotRepository
 	config     *AIConfig
+	usage      UsageService // Interface for usage logging
+}
+
+// UsageService interface for logging API calls
+type UsageService interface {
+	LogAPICall(call *models.APICall) error
 }
 
 type AIConfig struct {
@@ -34,12 +41,13 @@ type AIConfig struct {
 	Timeout    time.Duration
 }
 
-func NewAIHandler(prompts *database.PromptRepository, embeddings *database.EmbeddingRepository, snapshots *database.SnapshotRepository, config *AIConfig) *AIHandler {
+func NewAIHandler(prompts *database.PromptRepository, embeddings *database.EmbeddingRepository, snapshots *database.SnapshotRepository, config *AIConfig, usage UsageService) *AIHandler {
 	return &AIHandler{
 		prompts:    prompts,
 		embeddings: embeddings,
 		snapshots:  snapshots,
 		config:     config,
+		usage:      usage,
 	}
 }
 
@@ -78,11 +86,25 @@ func (h *AIHandler) HandlePrompt(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), h.config.Timeout)
 	defer cancel()
+	
+	startTime := time.Now()
 
 	userID, ok := r.Context().Value("user_id").(uuid.UUID)
 	if !ok {
 		// For development, use consistent development user ID
 		userID = uuid.MustParse("d5f3bdc2-65aa-4dd6-bf2b-0e05a6192402")
+	}
+
+	// Get API key ID from context (set by auth middleware)
+	var apiKeyID uuid.UUID
+	if apiKeyIDStr, ok := r.Context().Value("api_key_id").(string); ok {
+		if parsed, err := uuid.Parse(apiKeyIDStr); err == nil {
+			apiKeyID = parsed
+		}
+	}
+	if apiKeyID == uuid.Nil {
+		// Default for development
+		apiKeyID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	}
 
 	var req AIPromptRequest
@@ -144,6 +166,9 @@ func (h *AIHandler) HandlePrompt(w http.ResponseWriter, r *http.Request) {
 
 	// Store prompt for future context building
 	go h.storePromptAsync(userID, req, parsedResponse)
+
+	// Log the API call with prompt information
+	go h.logPromptAPICall(userID, apiKeyID, req, parsedResponse, r, startTime)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(parsedResponse)
@@ -789,4 +814,87 @@ func (h *AIHandler) createDiffAnalysis(ctx context.Context, userID uuid.UUID, re
 	// 4. Storing the diff in the database
 	
 	fmt.Printf("Diff analysis created for user %s, website %s\n", userID, req.WebsiteID)
+}
+
+// ─────────────────────────────────────────────
+// API Call Logging for Prompts
+// ─────────────────────────────────────────────
+
+func (h *AIHandler) logPromptAPICall(userID, apiKeyID uuid.UUID, req AIPromptRequest, resp AIPromptResponse, r *http.Request, startTime time.Time) {
+	if h.usage == nil {
+		return
+	}
+
+	responseTime := int(time.Since(startTime).Milliseconds())
+	
+	// Extract browser fingerprint from context if available
+	fingerprint, _ := r.Context().Value("browser_fingerprint").(string)
+	
+	// Determine status code based on response
+	statusCode := http.StatusOK
+	if resp.Status == "error" {
+		statusCode = http.StatusInternalServerError
+	}
+
+	// Truncate prompt and response for storage (to avoid huge entries)
+	promptText := req.Prompt
+	if len(promptText) > 2000 {
+		promptText = promptText[:2000] + "..."
+	}
+	
+	promptResponse := resp.Raw
+	if len(promptResponse) > 5000 {
+		promptResponse = promptResponse[:5000] + "..."
+	}
+
+	call := &models.APICall{
+		ID:                 uuid.New(),
+		UserID:            userID,
+		APIKeyID:          apiKeyID,
+		IPAddress:         getClientIP(r),
+		Domain:            extractDomain(r.Header.Get("Referer"), r.Host),
+		Referrer:          r.Header.Get("Referer"),
+		Action:            "prompt",
+		Endpoint:          r.URL.Path,
+		Method:            r.Method,
+		StatusCode:        statusCode,
+		ResponseTimeMS:    responseTime,
+		UserAgent:         r.Header.Get("User-Agent"),
+		DeviceType:        parseDeviceType(r.Header.Get("User-Agent")),
+		BrowserFingerprint: fingerprint,
+		PromptText:        &promptText,
+		PromptResponse:    &promptResponse,
+		AIProvider:        &h.config.Provider,
+		AIModel:           &h.config.Model,
+		PatchesCount:      len(resp.Patches),
+		SuccessStatus:     &resp.Status,
+		Timestamp:         time.Now(),
+		CreatedAt:         time.Now(),
+	}
+
+	if err := h.usage.LogAPICall(call); err != nil {
+		fmt.Printf("Error logging prompt API call: %v\n", err)
+	}
+}
+
+// Helper function to get client IP
+func getClientIP(r *http.Request) string {
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		// X-Forwarded-For can contain multiple IPs, take the first one
+		if idx := strings.Index(forwarded, ","); idx != -1 {
+			return strings.TrimSpace(forwarded[:idx])
+		}
+		return strings.TrimSpace(forwarded)
+	}
+	
+	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+		return realIP
+	}
+	
+	// Fallback to RemoteAddr, but strip the port
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	
+	return r.RemoteAddr
 }

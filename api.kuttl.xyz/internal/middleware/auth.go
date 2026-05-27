@@ -31,6 +31,12 @@ func NewAuthMiddleware(jwtService *auth.JWTService, authService *auth.Service) *
 // JWTAuth middleware for JWT token authentication
 func (m *AuthMiddleware) JWTAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip authentication for OPTIONS requests (CORS preflight)
+		if r.Method == "OPTIONS" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		token := extractJWTToken(r)
 		if token == "" {
 			response.Error(w, http.StatusUnauthorized, "Missing authorization token")

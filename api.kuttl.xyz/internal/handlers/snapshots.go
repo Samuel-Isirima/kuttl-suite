@@ -114,57 +114,50 @@ func (h *SnapshotHandler) CreateSnapshot(w http.ResponseWriter, r *http.Request)
 	}
 	promptID = &prompt.ID
 
-	// Check if a snapshot already exists for this website + user combination
-	existingSnapshot, err := h.snapshots.GetLatestSnapshotForWebsite(req.WebsiteID, userID)
+	// Create new snapshot data
+	newSnapshot := &models.WebsiteSnapshot{
+		WebsiteID:      req.WebsiteID,
+		UserID:         userID,
+		SessionID:      req.SessionID,
+		Version:        req.Version,
+		Components:     req.Components,
+		Styles:         req.Styles,
+		Layout:         req.Layout,
+		Customizations: req.Customizations,
+		Metadata:       req.Metadata,
+		PromptID:       promptID,
+		TriggerType:    req.TriggerType,
+	}
+
+	// Check for duplicate content
+	duplicateID, err := h.snapshots.CheckSnapshotDuplicate(req.WebsiteID, userID, newSnapshot)
 	if err != nil {
-		http.Error(w, "Failed to check existing snapshots", http.StatusInternalServerError)
-		return
+		log.Printf("Warning: Failed to check for duplicates: %v", err)
+		// Continue with creation anyway
 	}
 
 	var snapshot *models.WebsiteSnapshot
 
-	if existingSnapshot != nil {
-		// Update existing snapshot
-		snapshot = existingSnapshot
-		snapshot.SessionID = req.SessionID
-		snapshot.Version = req.Version
-		snapshot.Components = req.Components
-		snapshot.Styles = req.Styles
-		snapshot.Layout = req.Layout
-		snapshot.Customizations = req.Customizations
-		snapshot.Metadata = req.Metadata
-		snapshot.PromptID = promptID
-		snapshot.TriggerType = req.TriggerType
-
-		if err := h.snapshots.UpdateSnapshot(snapshot); err != nil {
-			http.Error(w, "Failed to update snapshot", http.StatusInternalServerError)
+	if duplicateID != nil {
+		// Found duplicate - return existing snapshot ID
+		existingSnapshot, err := h.snapshots.GetSnapshot(*duplicateID)
+		if err != nil {
+			http.Error(w, "Failed to retrieve existing snapshot", http.StatusInternalServerError)
 			return
 		}
-		
-		log.Printf("Updated existing snapshot %s for website %s", snapshot.ID, req.WebsiteID)
+		snapshot = existingSnapshot
+		log.Printf("Found duplicate snapshot %s for website %s - skipping creation", snapshot.ID, req.WebsiteID)
 	} else {
-		// Create new snapshot
-		snapshot = &models.WebsiteSnapshot{
-			ID:             uuid.New(),
-			WebsiteID:      req.WebsiteID,
-			UserID:         userID,
-			SessionID:      req.SessionID,
-			Version:        req.Version,
-			Components:     req.Components,
-			Styles:         req.Styles,
-			Layout:         req.Layout,
-			Customizations: req.Customizations,
-			Metadata:       req.Metadata,
-			PromptID:       promptID,
-			TriggerType:    req.TriggerType,
-		}
-
-		if err := h.snapshots.CreateSnapshot(snapshot); err != nil {
+		// Create new snapshot - content is unique
+		newSnapshot.ID = uuid.New()
+		
+		if err := h.snapshots.CreateSnapshot(newSnapshot); err != nil {
 			http.Error(w, "Failed to create snapshot", http.StatusInternalServerError)
 			return
 		}
 		
-		log.Printf("Created new snapshot %s for website %s", snapshot.ID, req.WebsiteID)
+		snapshot = newSnapshot
+		log.Printf("Created new unique snapshot %s for website %s", snapshot.ID, req.WebsiteID)
 	}
 
 	// Update prompt with snapshot ID if prompt was created

@@ -1,19 +1,42 @@
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Eye, EyeOff, ChevronLeft } from "lucide-react";
 import { useState } from "react";
+import { authApi } from "../lib/api";
+import { toast } from "sonner";
 
 export default function Login() {
+  const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     email: "",
     password: "",
     rememberMe: false
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Handle login logic here
-    console.log("Login attempt:", formData);
+  const handleSubmit = async () => {
+    
+    console.log("handleSubmit called");
+    setIsLoading(true);
+
+    try {
+      console.log("About to call authApi.login");
+      const result = await authApi.login({
+        email: formData.email,
+        password: formData.password
+      });
+      
+      console.log("Login successful:", result);
+      toast.success("Login successful! Welcome back.");
+      navigate("/"); 
+
+    } catch (error: any) {
+      console.error("Login error:", error);
+      toast.error(error.message || "Login failed. Please check your credentials.");
+    } finally {
+      console.log("Finally block reached");
+      setIsLoading(false);
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -22,6 +45,13 @@ export default function Login() {
       ...prev,
       [name]: type === "checkbox" ? checked : value
     }));
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSubmit();
+    }
   };
 
   return (
@@ -49,7 +79,7 @@ export default function Login() {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-          <form className="space-y-6" onSubmit={handleSubmit}>
+          <div className="space-y-6">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700">
                 Email address
@@ -63,6 +93,7 @@ export default function Login() {
                   required
                   value={formData.email}
                   onChange={handleChange}
+                  onKeyDown={handleKeyDown}
                   className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                   placeholder="Enter your email"
                 />
@@ -82,6 +113,7 @@ export default function Login() {
                   required
                   value={formData.password}
                   onChange={handleChange}
+                  onKeyDown={handleKeyDown}
                   className="appearance-none block w-full px-3 py-2 pr-10 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                   placeholder="Enter your password"
                 />
@@ -126,13 +158,15 @@ export default function Login() {
 
             <div>
               <button
-                type="submit"
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                type="button"
+                onClick={handleSubmit}
+                disabled={isLoading}
+                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Sign in
+                {isLoading ? "Signing in..." : "Sign in"}
               </button>
             </div>
-          </form>
+          </div>
 
           <div className="mt-6">
             <div className="relative">

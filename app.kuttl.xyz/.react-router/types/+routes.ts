@@ -23,6 +23,9 @@ type Pages = {
   "/customizations": {
     params: {};
   };
+  "/usage": {
+    params: {};
+  };
   "/api-usage": {
     params: {};
   };
@@ -52,7 +55,7 @@ type Pages = {
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/accounts" | "/ui-layers" | "/customizations" | "/api-usage" | "/api-keys" | "/changelog" | "/settings" | "/login" | "/register" | "/forgot-password" | "/reset-password";
+    page: "/" | "/accounts" | "/ui-layers" | "/customizations" | "/usage" | "/api-usage" | "/api-keys" | "/changelog" | "/settings" | "/login" | "/register" | "/forgot-password" | "/reset-password";
   };
   "routes/home.tsx": {
     id: "routes/home";
@@ -69,6 +72,10 @@ type RouteFiles = {
   "routes/customizations.tsx": {
     id: "routes/customizations";
     page: "/customizations";
+  };
+  "routes/usage.tsx": {
+    id: "routes/usage";
+    page: "/usage";
   };
   "routes/api-usage.tsx": {
     id: "routes/api-usage";
@@ -110,6 +117,7 @@ type RouteModules = {
   "routes/accounts": typeof import("./app/routes/accounts.tsx");
   "routes/ui-layers": typeof import("./app/routes/ui-layers.tsx");
   "routes/customizations": typeof import("./app/routes/customizations.tsx");
+  "routes/usage": typeof import("./app/routes/usage.tsx");
   "routes/api-usage": typeof import("./app/routes/api-usage.tsx");
   "routes/api-keys": typeof import("./app/routes/api-keys.tsx");
   "routes/changelog": typeof import("./app/routes/changelog.tsx");

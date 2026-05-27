@@ -13,6 +13,7 @@ import (
 	"api.kuttl.xyz/internal/handlers"
 	"api.kuttl.xyz/internal/middleware"
 	"api.kuttl.xyz/internal/services"
+	"api.kuttl.xyz/internal/usage"
 	"api.kuttl.xyz/pkg/logger"
 	"github.com/gorilla/mux"
 	"github.com/jmoiron/sqlx"
@@ -72,6 +73,7 @@ func main() {
 	jwtService := auth.NewJWTService(cfg.JWTSecret, cfg.GetJWTExpiry())
 	authService := auth.NewService(db, jwtService, cfg.APITokenPrefix)
 	authMiddleware := middleware.NewAuthMiddleware(jwtService, authService)
+	usageService := usage.NewService(db.DB)
 
 	// Initialize repositories with sqlx wrapper
 	sqlxDB := sqlx.NewDb(db.DB, "postgres") 
@@ -81,6 +83,8 @@ func main() {
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authService)
+	dashboardHandler := handlers.NewDashboardHandler(db.DB)
+	usageHandler := handlers.NewUsageHandler(usageService)
 	
 	// Initialize AI handler with config
 	aiConfig := &handlers.AIConfig{
@@ -89,7 +93,7 @@ func main() {
 		Model:    getAIModel(cfg),
 		Timeout:  60 * time.Second,
 	}
-	aiHandler := handlers.NewAIHandler(promptRepo, embeddingRepo, snapshotRepo, aiConfig)
+	aiHandler := handlers.NewAIHandler(promptRepo, embeddingRepo, snapshotRepo, aiConfig, usageService)
 	
 	// Initialize AI provider for embeddings (hardcode OpenAI since Anthropic doesn't support embeddings)
 	var aiProvider services.AIProvider
@@ -116,7 +120,7 @@ func main() {
 	rateLimiter := middleware.NewRateLimiter(cfg.RateLimit)
 
 	// Setup routes
-	router := setupRoutes(authHandler, aiHandler, snapshotHandler, authMiddleware, rateLimiter, requestLogger, cfg, db)
+	router := setupRoutes(authHandler, aiHandler, snapshotHandler, dashboardHandler, usageHandler, authMiddleware, rateLimiter, requestLogger, cfg, db)
 
 	logger.Info(fmt.Sprintf("Starting server on port %s", cfg.Port))
 	logger.Info(fmt.Sprintf("AI Provider: %s", cfg.AIProvider))
@@ -139,6 +143,8 @@ func setupRoutes(
 	authHandler *handlers.AuthHandler,
 	aiHandler *handlers.AIHandler,
 	snapshotHandler *handlers.SnapshotHandler,
+	dashboardHandler *handlers.DashboardHandler,
+	usageHandler *handlers.UsageHandler,
 	authMiddleware *middleware.AuthMiddleware,
 	rateLimiter *middleware.RateLimiter,
 	requestLogger *logger.Logger,
@@ -149,40 +155,58 @@ func setupRoutes(
 
 	// Apply global middleware
 	router.Use(middleware.CORS(cfg.AllowedOrigins))
+	router.Use(middleware.FingerprintMiddleware)
 	router.Use(rateLimiter.Middleware)
 	router.Use(requestLogger.Middleware)
 
 	// Public routes
 	public := router.PathPrefix("/api/v1").Subrouter()
-	public.HandleFunc("/health", healthHandler).Methods("GET")
-	public.HandleFunc("/health/detailed", createDetailedHealthHandler(db)).Methods("GET")
-	public.HandleFunc("/auth/register", authHandler.Register).Methods("POST")
-	public.HandleFunc("/auth/login", authHandler.Login).Methods("POST")
+	public.HandleFunc("/health", healthHandler).Methods("GET", "OPTIONS")
+	public.HandleFunc("/health/detailed", createDetailedHealthHandler(db)).Methods("GET", "OPTIONS")
+	public.HandleFunc("/auth/register", authHandler.Register).Methods("POST", "OPTIONS")
+	public.HandleFunc("/auth/login", authHandler.Login).Methods("POST", "OPTIONS")
+
+	// Serve fingerprinting script
+	router.HandleFunc("/fingerprint.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Header().Set("Cache-Control", "public, max-age=86400") // Cache for 24 hours
+		http.ServeFile(w, r, "static/fingerprint.js")
+	}).Methods("GET")
 
 	// Protected routes (JWT auth required)
 	protected := router.PathPrefix("/api/v1").Subrouter()
 	protected.Use(authMiddleware.JWTAuth)
-	protected.HandleFunc("/auth/profile", authHandler.GetProfile).Methods("GET")
-	protected.HandleFunc("/auth/tokens", authHandler.CreateAPIToken).Methods("POST")
-	protected.HandleFunc("/auth/tokens", authHandler.ListAPITokens).Methods("GET")
-	protected.HandleFunc("/auth/tokens/{tokenId}", authHandler.RevokeAPIToken).Methods("DELETE")
+	protected.HandleFunc("/auth/profile", authHandler.GetProfile).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/auth/tokens", authHandler.CreateAPIToken).Methods("POST", "OPTIONS")
+	protected.HandleFunc("/auth/tokens", authHandler.ListAPITokens).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/auth/tokens/{tokenId}", authHandler.RevokeAPIToken).Methods("DELETE", "OPTIONS")
+
+	// Dashboard routes
+	protected.HandleFunc("/dashboard", dashboardHandler.GetDashboardData).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/dashboard/metrics", dashboardHandler.GetMetrics).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/dashboard/activity", dashboardHandler.GetRecentActivity).Methods("GET", "OPTIONS")
+
+	// Usage routes
+	protected.HandleFunc("/usage/calls", usageHandler.GetAPICalls).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/usage/stats", usageHandler.GetUsageStats).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/usage/websites", usageHandler.GetWebsites).Methods("GET", "OPTIONS")
 
 	// Snapshot routes
-	protected.HandleFunc("/snapshots", snapshotHandler.CreateSnapshot).Methods("POST")
-	protected.HandleFunc("/snapshots", snapshotHandler.ListSnapshots).Methods("GET")
-	protected.HandleFunc("/snapshots/{id}", snapshotHandler.GetSnapshot).Methods("GET")
-	protected.HandleFunc("/snapshots/{id}", snapshotHandler.DeleteSnapshot).Methods("DELETE")
-	protected.HandleFunc("/snapshots/{id}/embeddings", snapshotHandler.GetSnapshotEmbeddings).Methods("GET")
-	protected.HandleFunc("/snapshots/stats", snapshotHandler.GetSnapshotStats).Methods("GET")
+	protected.HandleFunc("/snapshots", snapshotHandler.CreateSnapshot).Methods("POST", "OPTIONS")
+	protected.HandleFunc("/snapshots", snapshotHandler.ListSnapshots).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/snapshots/{id}", snapshotHandler.GetSnapshot).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/snapshots/{id}", snapshotHandler.DeleteSnapshot).Methods("DELETE", "OPTIONS")
+	protected.HandleFunc("/snapshots/{id}/embeddings", snapshotHandler.GetSnapshotEmbeddings).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/snapshots/stats", snapshotHandler.GetSnapshotStats).Methods("GET", "OPTIONS")
 	
 	// Diff and similarity routes
-	protected.HandleFunc("/snapshots/diffs", snapshotHandler.CreateDiff).Methods("POST")
-	protected.HandleFunc("/snapshots/diffs", snapshotHandler.ListDiffs).Methods("GET") 
-	protected.HandleFunc("/snapshots/diffs/{id}", snapshotHandler.GetDiff).Methods("GET")
-	protected.HandleFunc("/snapshots/search", snapshotHandler.SearchSimilarComponents).Methods("POST")
+	protected.HandleFunc("/snapshots/diffs", snapshotHandler.CreateDiff).Methods("POST", "OPTIONS")
+	protected.HandleFunc("/snapshots/diffs", snapshotHandler.ListDiffs).Methods("GET", "OPTIONS") 
+	protected.HandleFunc("/snapshots/diffs/{id}", snapshotHandler.GetDiff).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/snapshots/search", snapshotHandler.SearchSimilarComponents).Methods("POST", "OPTIONS")
 	
 	// Context routes
-	protected.HandleFunc("/websites/context", snapshotHandler.GetWebsiteContext).Methods("GET")
+	protected.HandleFunc("/websites/context", snapshotHandler.GetWebsiteContext).Methods("GET", "OPTIONS")
 
 	// AI and snapshot endpoints (supports both JWT and API key auth, or no auth for development)
 	apiRoutes := router.PathPrefix("/api").Subrouter()

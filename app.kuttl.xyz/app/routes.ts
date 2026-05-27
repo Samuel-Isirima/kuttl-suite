@@ -6,6 +6,7 @@ export default [
   route("accounts", "routes/accounts.tsx"),
   route("ui-layers", "routes/ui-layers.tsx"), 
   route("customizations", "routes/customizations.tsx"),
+  route("usage", "routes/usage.tsx"),
   route("api-usage", "routes/api-usage.tsx"),
   route("api-keys", "routes/api-keys.tsx"),
   route("changelog", "routes/changelog.tsx"),
