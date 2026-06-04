@@ -1028,46 +1028,10 @@
   tick(); setInterval(tick, 1000);
 </script>
 
-<!-- Cuttlefish — drop in, call init -->
-<script src="../dist/cuttlefish.iife.js"></script>
-<script>
-  Cuttlefish.init({
-    root:       document.getElementById("page"),
-    persistKey: "vektor-analytics",
-    debug:      true, // Enable debug logging to see snapshot activity
-    
-    // AI Configuration
-    ai: {
-      provider: "gemini",
-      apiKey:   "AIzaSyCANn2apFM4VthM1kKS172VB_Nj46GhzuY",
-    },
-    
-    // Enable automatic website snapshotting
-    snapshot: {
-      enabled: true,
-      
-      // Configure the backend API
-      api: {
-        baseUrl: 'http://localhost:8080', // Your Kuttl API server (Docker host port)
-        // apiKey: 'your-api-key-here',   // Optional API key
-        timeout: 10000                    // Request timeout in ms
-      },
-      
-      // Optional: Custom identifiers (auto-detected if not provided)
-      websiteId: 'vektor-analytics-demo',  // Custom website ID
-      // userId: 'demo-user',             // Defaults to auto-detected or anonymous
-      
-      // Optional: Behavior configuration
-      onChanges: true,                     // Create snapshots when patches are applied (default: true)
-      throttleMs: 3000                     // Minimum interval between snapshots (3 seconds for demo)
-    }
-  });
-
-  // Log when snapshot system is ready
-  console.log('%c🔄 Automatic Website Snapshotting Enabled', 'color: #6c63ff; font-weight: bold;');
-  console.log('→ Initial snapshot will be created in 100ms');
-  console.log('→ Snapshots will be sent to http://localhost:8080/api/snapshots');
-  console.log('→ Try making changes with AI prompts to trigger automatic snapshots!');
-</script>
+<script
+  src="../dist/cuttlefish.iife.js"
+  data-website-key="RXDs1AfujBxKcixQuKSeD1LAvoMmuN0dLzGotGGwqUtVsNencfQA6XBHfvcTo7DY"
+></script>
+<script>Cuttlefish.init();</script>
 </body>
 </html>

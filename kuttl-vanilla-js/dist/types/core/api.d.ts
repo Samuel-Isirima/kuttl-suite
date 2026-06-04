@@ -2,6 +2,7 @@ import type { WebsiteSnapshot, SnapshotDiff } from "../types/serialization";
 export interface APIConfig {
     baseUrl: string;
     apiKey?: string;
+    websiteKey?: string;
     timeout?: number;
 }
 export interface SnapshotAPIResponse {

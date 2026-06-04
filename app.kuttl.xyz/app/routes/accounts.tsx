@@ -1,5 +1,6 @@
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { Plus, Search, Filter, MoreVertical } from "lucide-react";
+import { Input } from "../components/ui/input";
 
 const accounts = [
   {
@@ -72,12 +73,11 @@ export default function Accounts() {
 
         {/* Filters */}
         <div className="flex items-center space-x-4">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
+          <div className="flex-1 max-w-md">
+            <Input
               type="text"
               placeholder="Search accounts..."
-              className="pl-10 pr-4 py-2 w-full bg-white border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              icon={<Search className="h-4 w-4" />}
             />
           </div>
           <button className="flex items-center space-x-2 px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">
@@ -87,7 +87,7 @@ export default function Accounts() {
         </div>
 
         {/* Accounts Table */}
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-lg border border-gray-200  overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">

@@ -110,8 +110,8 @@ export function init(userConfig: InterceptConfig = {}): InterceptInstance {
     }
   }
 
-  // AI layer
-  const aiLayer = createAILayer();
+  // AI layer — shares the same base URL as the snapshot API
+  const aiLayer = createAILayer(config.websiteKey ?? undefined, config.snapshot?.api?.baseUrl);
 
   // Website serializer
   const serializer = createWebsiteSerializer({
@@ -134,7 +134,10 @@ export function init(userConfig: InterceptConfig = {}): InterceptInstance {
   
   if (config.snapshot?.enabled && config.snapshot?.api) {
     console.log("[InterceptJS DEBUG] Creating SnapshotAPI instance");
-    snapshotAPI = new SnapshotAPI(config.snapshot.api);
+    snapshotAPI = new SnapshotAPI({
+      ...config.snapshot.api,
+      ...(config.websiteKey ? { websiteKey: config.websiteKey } : {}),
+    });
     
     if (config.debug) {
       console.log("[InterceptJS] Automatic snapshotting enabled", {
@@ -595,6 +598,7 @@ interface ResolvedConfig {
   persistKey: string | null;
   debug: boolean;
   ai: AIProviderConfig | null;
+  websiteKey: string | null;
   onSelect: ((el: SelectedElement | null) => void) | null;
   snapshot: {
     enabled: boolean;
@@ -619,6 +623,7 @@ function resolveConfig(config: InterceptConfig): ResolvedConfig {
     persistKey:           config.persistKey           ?? null,
     debug:                config.debug               ?? false,
     ai:                   config.ai                  ?? null,
+    websiteKey:           config.websiteKey           ?? null,
     onSelect:             config.onSelect            ?? null,
     snapshot: {
       enabled:            config.snapshot?.enabled   ?? false,

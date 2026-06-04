@@ -80,7 +80,7 @@ export function PromptDetailsModal({ isOpen, onClose, call }: PromptDetailsModal
         />
         
         {/* Modal */}
-        <div className="relative w-full max-w-4xl max-h-[90vh] overflow-hidden bg-white rounded-lg shadow-xl">
+        <div className="relative w-full max-w-4xl max-h-[90vh] overflow-hidden bg-white rounded-lg -xl">
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b border-gray-200">
             <div className="flex items-center space-x-3">

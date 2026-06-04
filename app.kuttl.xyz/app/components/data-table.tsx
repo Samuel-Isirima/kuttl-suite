@@ -43,7 +43,7 @@ export function DataTable() {
 
   if (loading) {
     return (
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
+      <div className="bg-white rounded-lg border border-gray-200 ">
         <div className="p-4 lg:p-6 border-b border-gray-200">
           <div className="h-6 bg-gray-200 rounded w-1/4 animate-pulse"></div>
         </div>
@@ -64,7 +64,7 @@ export function DataTable() {
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
+    <div className="bg-white rounded-lg border border-gray-200 ">
       <div className="p-4 lg:p-6 border-b border-gray-200">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-medium text-gray-900">Recent Activity</h3>

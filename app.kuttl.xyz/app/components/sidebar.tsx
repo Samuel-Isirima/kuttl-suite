@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "react-router";
-import { getStoredUser } from "../lib/api";
+import { getStoredUser, authApi } from "../lib/api";
 import { 
   BarChart3, 
   Package, 
@@ -11,6 +11,9 @@ import {
   ChevronLeft,
   FileText,
   Key,
+  LogOut,
+  ChevronUp,
+  Globe
 } from "lucide-react";
 
 interface SidebarProps {
@@ -28,13 +31,10 @@ interface NavigationItem {
 
 const navigation: NavigationItem[] = [
   { name: "Dashboard", href: "/", icon: BarChart3 },
+  { name: "Websites", href: "/websites", icon: Globe },
   { name: "Usage", href: "/usage", icon: Package },
   { name: "Customizations", href: "/customizations", icon: Settings },
-];
-
-const otherItems: NavigationItem[] = [
   { name: "Documentation", href: "/docs", icon: FileText },
-  { name: "Analytics", href: "/analytics", icon: PieChart },
   { name: "API Keys", href: "/api-keys", icon: Key },
 ];
 
@@ -45,7 +45,9 @@ const accountItems: NavigationItem[] = [
 
 export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const [user, setUser] = useState<{name: string; email: string} | null>(null);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const location = useLocation();
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const userData = getStoredUser();
@@ -53,6 +55,24 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       setUser(userData);
     }
   }, []);
+
+  // Close user menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  const handleLogout = () => {
+    authApi.logout();
+    setShowUserMenu(false);
+  };
 
   const isCurrentPath = (href: string) => {
     if (href === "/") {
@@ -135,25 +155,6 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
               </nav>
             </div>
 
-            {/* Other */}
-            <div className="mb-8">
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                OTHER
-              </h3>
-              <nav className="space-y-1">
-                {otherItems.map((item) => (
-                  <a
-                    key={item.name}
-                    href={item.href}
-                    className="group flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-md hover:bg-gray-50 hover:text-gray-900 transition-colors"
-                  >
-                    <item.icon className="mr-3 h-5 w-5 flex-shrink-0" />
-                    {item.name}
-                  </a>
-                ))}
-              </nav>
-            </div>
-
             {/* Account */}
             <div>
               <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
@@ -175,19 +176,46 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           </div>
 
           {/* User Profile */}
-          <div className="flex-shrink-0 border-t border-gray-200 p-4">
-            <div className="flex items-center">
+          <div className="flex-shrink-0 border-t border-gray-200 p-4 relative" ref={userMenuRef}>
+            <button
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              className="w-full flex items-center hover:bg-gray-50 rounded-md p-2 transition-colors"
+            >
               <div className="flex-shrink-0">
                 <div className="h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-medium">
                   {user?.name ? user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : 'U'}
                 </div>
               </div>
-              <div className="ml-3 flex-1 min-w-0">
+              <div className="ml-3 flex-1 min-w-0 text-left">
                 <p className="text-sm font-medium text-gray-900 truncate">
                   {user?.name || 'User'}
                 </p>
+                <p className="text-xs text-gray-500 truncate">
+                  {user?.email || ''}
+                </p>
               </div>
-            </div>
+              <ChevronUp 
+                className={cn(
+                  "h-4 w-4 text-gray-400 transition-transform",
+                  showUserMenu ? "rotate-180" : ""
+                )}
+              />
+            </button>
+
+            {/* User Menu Dropdown */}
+            {showUserMenu && (
+              <div className="absolute bottom-full left-4 right-4 mb-2 bg-white border border-gray-200 rounded-md shadow-lg z-50">
+                <div className="py-1">
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                  >
+                    <LogOut className="mr-3 h-4 w-4" />
+                    Sign Out
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

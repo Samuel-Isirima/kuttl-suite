@@ -1,10 +1,9 @@
 import { useState, useEffect } from "react";
 import { DashboardLayout } from "../components/dashboard-layout";
 import { AuthWrapper } from "../components/auth-wrapper";
-import { PromptDetailsModal } from "../components/prompt-details-modal";
-import { api } from "../lib/api";
+import { api, websitesApi } from "../lib/api";
 import { toast } from "sonner";
-import { Activity, Globe, Clock, Smartphone, Monitor, Tablet, Filter, Calendar, MessageCircle, Eye } from "lucide-react";
+import { Activity, Globe, Clock, Smartphone, Monitor, Tablet, Filter, Calendar, Eye } from "lucide-react";
 
 interface APICall {
   id: string;
@@ -20,12 +19,6 @@ interface APICall {
   user_agent: string;
   device_type: string;
   browser_fingerprint: string;
-  prompt_text?: string;
-  prompt_response?: string;
-  ai_provider?: string;
-  ai_model?: string;
-  patches_count: number;
-  success_status?: string;
   timestamp: string;
 }
 
@@ -45,9 +38,7 @@ export default function Usage() {
   const [filterAction, setFilterAction] = useState<string>("all");
   const [filterTimeRange, setFilterTimeRange] = useState<string>("7d");
   const [filterWebsite, setFilterWebsite] = useState<string>("all");
-  const [websites, setWebsites] = useState<string[]>([]);
-  const [selectedCall, setSelectedCall] = useState<APICall | null>(null);
-  const [showPromptModal, setShowPromptModal] = useState(false);
+  const [websites, setWebsites] = useState<Array<{id: string, name: string, url: string}>>([]);
 
   useEffect(() => {
     fetchUsageData();
@@ -62,7 +53,10 @@ export default function Usage() {
       const params = new URLSearchParams();
       if (filterAction !== "all") params.set("action", filterAction);
       if (filterTimeRange !== "all") params.set("timeRange", filterTimeRange);
-      if (filterWebsite !== "all") params.set("domain", filterWebsite);
+      if (filterWebsite !== "all") {
+        const selectedWebsite = websites.find(w => w.id === filterWebsite);
+        if (selectedWebsite) params.set("domain", selectedWebsite.url);
+      }
 
       const [callsResponse, statsResponse] = await Promise.all([
         api.get(`usage/calls?${params}`).json<{ success: boolean; data: APICall[] } | APICall[]>(),
@@ -70,8 +64,8 @@ export default function Usage() {
       ]);
 
       // Handle both wrapped and unwrapped responses
-      const calls = Array.isArray(callsResponse) ? callsResponse : (callsResponse.data || []);
-      const stats = statsResponse.data ? statsResponse.data : statsResponse;
+      const calls = Array.isArray(callsResponse) ? callsResponse : ('data' in callsResponse ? callsResponse.data : []);
+      const stats = 'data' in statsResponse ? statsResponse.data : statsResponse;
 
       setApiCalls(calls);
       setStats(stats);
@@ -95,10 +89,8 @@ export default function Usage() {
 
   const fetchWebsites = async () => {
     try {
-      const response = await api.get('usage/websites').json<{ success: boolean; data: string[] }>();
-      // Handle both wrapped and unwrapped responses
-      const websites = response.data || response;
-      setWebsites(Array.isArray(websites) ? websites : []);
+      const data = await websitesApi.list();
+      setWebsites(Array.isArray(data) ? data.map(w => ({ id: w.id, name: w.name, url: w.url })) : []);
     } catch (error: any) {
       console.error('Failed to fetch websites:', error);
       setWebsites([]);
@@ -134,26 +126,12 @@ export default function Usage() {
 
   const getActionColor = (action: string) => {
     switch (action.toLowerCase()) {
-      case 'prompt': return "text-blue-600 bg-blue-100";
       case 'snapshot': return "text-purple-600 bg-purple-100";
       case 'customization': return "text-orange-600 bg-orange-100";
       default: return "text-gray-600 bg-gray-100";
     }
   };
 
-  const handleShowPromptDetails = (call: APICall) => {
-    setSelectedCall(call);
-    setShowPromptModal(true);
-  };
-
-  const handleClosePromptModal = () => {
-    setShowPromptModal(false);
-    setSelectedCall(null);
-  };
-
-  const hasPromptData = (call: APICall) => {
-    return call.prompt_text || call.prompt_response || call.action === 'prompt';
-  };
 
   return (
     <AuthWrapper>
@@ -217,7 +195,6 @@ export default function Usage() {
                   className="text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="all">All Actions</option>
-                  <option value="prompt">Prompt</option>
                   <option value="snapshot">Snapshot</option>
                   <option value="customization">Customization</option>
                 </select>
@@ -235,22 +212,6 @@ export default function Usage() {
                   <option value="30d">Last 30 Days</option>
                   <option value="90d">Last 90 Days</option>
                   <option value="all">All Time</option>
-                </select>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Globe className="w-4 h-4 text-gray-500" />
-                <label className="text-sm font-medium text-gray-700">Website:</label>
-                <select
-                  value={filterWebsite}
-                  onChange={(e) => setFilterWebsite(e.target.value)}
-                  className="text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="all">All Websites</option>
-                  {Array.isArray(websites) && websites.map((website) => (
-                    <option key={website} value={website}>
-                      {website}
-                    </option>
-                  ))}
                 </select>
               </div>
             </div>
@@ -371,20 +332,10 @@ export default function Usage() {
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center space-x-2">
-                            {hasPromptData(call) ? (
-                              <button
-                                onClick={() => handleShowPromptDetails(call)}
-                                className="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
-                              >
-                                <MessageCircle className="w-3 h-3 mr-1" />
-                                View Prompt
-                              </button>
-                            ) : (
-                              <span className="inline-flex items-center px-2 py-1 text-xs text-gray-400 bg-gray-50 rounded-md">
-                                <Eye className="w-3 h-3 mr-1" />
-                                No Prompt
-                              </span>
-                            )}
+                            <span className="inline-flex items-center px-2 py-1 text-xs text-gray-500 bg-gray-50 rounded-md">
+                              <Eye className="w-3 h-3 mr-1" />
+                              API Call
+                            </span>
                           </div>
                         </td>
                       </tr>
@@ -397,12 +348,6 @@ export default function Usage() {
         </div>
       </DashboardLayout>
 
-      {/* Prompt Details Modal */}
-      <PromptDetailsModal
-        isOpen={showPromptModal}
-        onClose={handleClosePromptModal}
-        call={selectedCall}
-      />
     </AuthWrapper>
   );
 }

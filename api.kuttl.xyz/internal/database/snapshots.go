@@ -176,8 +176,8 @@ func (r *SnapshotRepository) CreateSnapshot(snapshot *models.WebsiteSnapshot) er
 		INSERT INTO website_snapshots (
 			id, website_id, user_id, session_id, version,
 			components, styles, layout, customizations, metadata,
-			created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			browser_fingerprint, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 	`
 
 	_, err := r.db.Exec(query,
@@ -191,6 +191,7 @@ func (r *SnapshotRepository) CreateSnapshot(snapshot *models.WebsiteSnapshot) er
 		snapshot.Layout,
 		snapshot.Customizations,
 		snapshot.Metadata,
+		snapshot.BrowserFingerprint,
 		snapshot.CreatedAt,
 		snapshot.UpdatedAt,
 	)

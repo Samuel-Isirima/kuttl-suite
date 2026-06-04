@@ -1,17 +1,17 @@
 import { jsx, jsxs, Fragment } from "react/jsx-runtime";
 import { PassThrough } from "node:stream";
 import { createReadableStreamFromReadable } from "@react-router/node";
-import { ServerRouter, UNSAFE_withComponentProps, Outlet, UNSAFE_withErrorBoundaryProps, isRouteErrorResponse, Meta, Links, ScrollRestoration, Scripts, useNavigate, Link, useSearchParams } from "react-router";
+import { ServerRouter, UNSAFE_withComponentProps, Outlet, UNSAFE_withErrorBoundaryProps, isRouteErrorResponse, Meta, Links, ScrollRestoration, Scripts, useLocation, useNavigate, Link, useSearchParams } from "react-router";
 import { isbot } from "isbot";
 import { renderToPipeableStream } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster as Toaster$1, toast } from "sonner";
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { useState, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import ky from "ky";
-import { ChevronLeft, BarChart3, Package, Settings, FileText, PieChart, Key, User, Bell, TrendingUp, Filter, Plus, Search, MoreVertical, Eye, Code, Download, Copy, Activity, CheckCircle, AlertTriangle, Trash2, Wrench, Bug, Zap, Shield, CreditCard, Save, EyeOff, Check, Mail, ArrowLeft } from "lucide-react";
-import { ResponsiveContainer, AreaChart, XAxis, YAxis, Area, PieChart as PieChart$1, Pie, Cell, BarChart, Bar } from "recharts";
+import { ChevronLeft, BarChart3, Globe, Package, Settings, FileText, Key, User, ChevronUp, LogOut, Bell, TrendingUp, Filter, Plus, Search, MoreVertical, Eye, Code, Download, ExternalLink, Trash2, Copy, Calendar, Activity, Clock, Monitor, Tablet, Smartphone, CheckCircle, Camera, Palette, Shield, ArrowRight, Zap, AlertTriangle, AlertCircle, Lock, Mail, EyeOff, Wrench, Bug, CreditCard, Save, Check, ArrowLeft } from "lucide-react";
+import { ResponsiveContainer, AreaChart, XAxis, YAxis, Area, BarChart, Bar } from "recharts";
 import { createPortal } from "react-dom";
 const streamTimeout = 5e3;
 function handleRequest(request, responseStatusCode, responseHeaders, routerContext, loadContext) {
@@ -222,6 +222,34 @@ const dashboardApi = {
   },
   getRecentActivity: async () => {
     return api.get("dashboard/activity").json();
+  },
+  getAnalyticsData: async () => {
+    return api.get("dashboard/analytics").json();
+  },
+  getUsageData: async () => {
+    return api.get("dashboard/usage").json();
+  },
+  getCustomizationsByPlan: async () => {
+    return api.get("dashboard/customizations-by-plan").json();
+  }
+};
+const customizationsApi = {
+  list: async (params) => {
+    const searchParams = new URLSearchParams();
+    if (params?.limit) searchParams.set("limit", params.limit.toString());
+    if (params?.offset) searchParams.set("offset", params.offset.toString());
+    if (params?.status) searchParams.set("status", params.status);
+    if (params?.type) searchParams.set("type", params.type);
+    const response = await api.get(`customizations?${searchParams}`).json();
+    return response.data;
+  },
+  getStats: async () => {
+    const response = await api.get("customizations/stats").json();
+    return response.data;
+  },
+  create: async (data) => {
+    const response = await api.post("customizations", { json: data }).json();
+    return response.data;
   }
 };
 const apiKeysApi = {
@@ -235,6 +263,28 @@ const apiKeysApi = {
   },
   revoke: async (tokenId) => {
     return api.delete(`auth/tokens/${tokenId}`).json();
+  }
+};
+const websitesApi = {
+  list: async () => {
+    const response = await api.get("websites").json();
+    return response.data;
+  },
+  create: async (data) => {
+    const response = await api.post("websites", { json: data }).json();
+    return response.data;
+  },
+  get: async (id) => {
+    const response = await api.get(`websites/${id}`).json();
+    return response.data;
+  },
+  update: async (id, data) => {
+    const response = await api.put(`websites/${id}`, { json: data }).json();
+    return response;
+  },
+  delete: async (id) => {
+    const response = await api.delete(`websites/${id}`).json();
+    return response;
   }
 };
 const getStoredUser = () => {
@@ -251,13 +301,11 @@ const isAuthenticated = () => {
   return !!getStoredToken();
 };
 const navigation = [
-  { name: "Dashboard", href: "/", icon: BarChart3, current: true },
-  { name: "Websites", href: "/websites", icon: Package },
-  { name: "Customizations", href: "/customizations", icon: Settings }
-];
-const otherItems = [
+  { name: "Dashboard", href: "/", icon: BarChart3 },
+  { name: "Websites", href: "/websites", icon: Globe },
+  { name: "Usage", href: "/usage", icon: Package },
+  { name: "Customizations", href: "/customizations", icon: Settings },
   { name: "Documentation", href: "/docs", icon: FileText },
-  { name: "Analytics", href: "/analytics", icon: PieChart },
   { name: "API Keys", href: "/api-keys", icon: Key }
 ];
 const accountItems = [
@@ -266,12 +314,36 @@ const accountItems = [
 ];
 function Sidebar({ isOpen = false, onClose }) {
   const [user, setUser] = useState(null);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const location = useLocation();
+  const userMenuRef = useRef(null);
   useEffect(() => {
     const userData = getStoredUser();
     if (userData) {
       setUser(userData);
     }
   }, []);
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
+        setShowUserMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+  const handleLogout = () => {
+    authApi.logout();
+    setShowUserMenu(false);
+  };
+  const isCurrentPath = (href) => {
+    if (href === "/") {
+      return location.pathname === "/";
+    }
+    return location.pathname.startsWith(href);
+  };
   return /* @__PURE__ */ jsxs(Fragment, { children: [
     isOpen && /* @__PURE__ */ jsx(
       "div",
@@ -310,37 +382,25 @@ function Sidebar({ isOpen = false, onClose }) {
           /* @__PURE__ */ jsxs("div", { className: "flex-1 flex flex-col overflow-y-auto px-4 py-4", children: [
             /* @__PURE__ */ jsxs("div", { className: "mb-8", children: [
               /* @__PURE__ */ jsx("h3", { className: "text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3", children: "MAIN MENU" }),
-              /* @__PURE__ */ jsx("nav", { className: "space-y-1", children: navigation.map((item) => /* @__PURE__ */ jsxs(
-                "a",
-                {
-                  href: item.href,
-                  className: cn(
-                    "group flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors",
-                    item.current ? "bg-blue-50 text-blue-600 border-blue-500" : "text-gray-700 hover:bg-gray-50 hover:text-gray-900"
-                  ),
-                  children: [
-                    /* @__PURE__ */ jsx(item.icon, { className: "mr-3 h-5 w-5 flex-shrink-0" }),
-                    /* @__PURE__ */ jsx("span", { className: "flex-1", children: item.name }),
-                    item.badge && /* @__PURE__ */ jsx("span", { className: "ml-3 inline-block py-0.5 px-2 text-xs font-medium bg-gray-200 text-gray-800 rounded-full", children: item.badge })
-                  ]
-                },
-                item.name
-              )) })
-            ] }),
-            /* @__PURE__ */ jsxs("div", { className: "mb-8", children: [
-              /* @__PURE__ */ jsx("h3", { className: "text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3", children: "OTHER" }),
-              /* @__PURE__ */ jsx("nav", { className: "space-y-1", children: otherItems.map((item) => /* @__PURE__ */ jsxs(
-                "a",
-                {
-                  href: item.href,
-                  className: "group flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-md hover:bg-gray-50 hover:text-gray-900 transition-colors",
-                  children: [
-                    /* @__PURE__ */ jsx(item.icon, { className: "mr-3 h-5 w-5 flex-shrink-0" }),
-                    item.name
-                  ]
-                },
-                item.name
-              )) })
+              /* @__PURE__ */ jsx("nav", { className: "space-y-1", children: navigation.map((item) => {
+                const isCurrent = isCurrentPath(item.href);
+                return /* @__PURE__ */ jsxs(
+                  "a",
+                  {
+                    href: item.href,
+                    className: cn(
+                      "group flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors",
+                      isCurrent ? "bg-blue-50 text-blue-600 border-blue-500" : "text-gray-700 hover:bg-gray-50 hover:text-gray-900"
+                    ),
+                    children: [
+                      /* @__PURE__ */ jsx(item.icon, { className: "mr-3 h-5 w-5 flex-shrink-0" }),
+                      /* @__PURE__ */ jsx("span", { className: "flex-1", children: item.name }),
+                      item.badge && /* @__PURE__ */ jsx("span", { className: "ml-3 inline-block py-0.5 px-2 text-xs font-medium bg-gray-200 text-gray-800 rounded-full", children: item.badge })
+                    ]
+                  },
+                  item.name
+                );
+              }) })
             ] }),
             /* @__PURE__ */ jsxs("div", { children: [
               /* @__PURE__ */ jsx("h3", { className: "text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3", children: "ACCOUNT" }),
@@ -358,10 +418,42 @@ function Sidebar({ isOpen = false, onClose }) {
               )) })
             ] })
           ] }),
-          /* @__PURE__ */ jsx("div", { className: "flex-shrink-0 border-t border-gray-200 p-4", children: /* @__PURE__ */ jsxs("div", { className: "flex items-center", children: [
-            /* @__PURE__ */ jsx("div", { className: "flex-shrink-0", children: /* @__PURE__ */ jsx("div", { className: "h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-medium", children: user?.name ? user.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) : "U" }) }),
-            /* @__PURE__ */ jsx("div", { className: "ml-3 flex-1 min-w-0", children: /* @__PURE__ */ jsx("p", { className: "text-sm font-medium text-gray-900 truncate", children: user?.name || "User" }) })
-          ] }) })
+          /* @__PURE__ */ jsxs("div", { className: "flex-shrink-0 border-t border-gray-200 p-4 relative", ref: userMenuRef, children: [
+            /* @__PURE__ */ jsxs(
+              "button",
+              {
+                onClick: () => setShowUserMenu(!showUserMenu),
+                className: "w-full flex items-center hover:bg-gray-50 rounded-md p-2 transition-colors",
+                children: [
+                  /* @__PURE__ */ jsx("div", { className: "flex-shrink-0", children: /* @__PURE__ */ jsx("div", { className: "h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-medium", children: user?.name ? user.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) : "U" }) }),
+                  /* @__PURE__ */ jsxs("div", { className: "ml-3 flex-1 min-w-0 text-left", children: [
+                    /* @__PURE__ */ jsx("p", { className: "text-sm font-medium text-gray-900 truncate", children: user?.name || "User" }),
+                    /* @__PURE__ */ jsx("p", { className: "text-xs text-gray-500 truncate", children: user?.email || "" })
+                  ] }),
+                  /* @__PURE__ */ jsx(
+                    ChevronUp,
+                    {
+                      className: cn(
+                        "h-4 w-4 text-gray-400 transition-transform",
+                        showUserMenu ? "rotate-180" : ""
+                      )
+                    }
+                  )
+                ]
+              }
+            ),
+            showUserMenu && /* @__PURE__ */ jsx("div", { className: "absolute bottom-full left-4 right-4 mb-2 bg-white border border-gray-200 rounded-md shadow-lg z-50", children: /* @__PURE__ */ jsx("div", { className: "py-1", children: /* @__PURE__ */ jsxs(
+              "button",
+              {
+                onClick: handleLogout,
+                className: "w-full flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors",
+                children: [
+                  /* @__PURE__ */ jsx(LogOut, { className: "mr-3 h-4 w-4" }),
+                  "Sign Out"
+                ]
+              }
+            ) }) })
+          ] })
         ] })
       }
     )
@@ -413,6 +505,9 @@ function MetricsGrid() {
     fetchMetrics();
   }, []);
   const formatNumber = (num) => {
+    if (num == null || num === void 0 || isNaN(num)) {
+      return "0";
+    }
     if (num >= 1e6) {
       return (num / 1e6).toFixed(1) + "M";
     }
@@ -422,22 +517,22 @@ function MetricsGrid() {
     return num.toLocaleString();
   };
   const calculateChange = (current, monthly) => {
-    if (current === 0) return "+0%";
+    if (current == null || monthly == null || current === 0) return "+0%";
     const percentage = monthly / Math.max(current - monthly, 1) * 100;
     return `+${percentage.toFixed(0)}%`;
   };
   if (loading) {
-    return /* @__PURE__ */ jsx("div", { className: "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6", children: [1, 2, 3].map((i) => /* @__PURE__ */ jsxs("div", { className: "bg-white p-4 lg:p-6 rounded-lg border border-gray-200 shadow-sm animate-pulse", children: [
+    return /* @__PURE__ */ jsx("div", { className: "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6", children: [1, 2, 3].map((i) => /* @__PURE__ */ jsxs("div", { className: "bg-white p-4 lg:p-6 rounded-lg border border-gray-200  animate-pulse", children: [
       /* @__PURE__ */ jsx("div", { className: "h-4 bg-gray-200 rounded w-1/2 mb-4" }),
       /* @__PURE__ */ jsx("div", { className: "h-8 bg-gray-200 rounded w-1/3 mb-2" }),
       /* @__PURE__ */ jsx("div", { className: "h-3 bg-gray-200 rounded w-1/4" })
     ] }, i)) });
   }
   if (!metrics) {
-    return /* @__PURE__ */ jsx("div", { className: "bg-white p-8 rounded-lg border border-gray-200 shadow-sm text-center", children: /* @__PURE__ */ jsx("p", { className: "text-gray-500", children: "Failed to load metrics" }) });
+    return /* @__PURE__ */ jsx("div", { className: "bg-white p-8 rounded-lg border border-gray-200  text-center", children: /* @__PURE__ */ jsx("p", { className: "text-gray-500", children: "Failed to load metrics" }) });
   }
   return /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6", children: [
-    /* @__PURE__ */ jsxs("div", { className: "bg-white p-4 lg:p-6 rounded-lg border border-gray-200 shadow-sm md:col-span-2 xl:col-span-1", children: [
+    /* @__PURE__ */ jsxs("div", { className: "bg-white p-4 lg:p-6 rounded-lg border border-gray-200  md:col-span-2 xl:col-span-1", children: [
       /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between mb-4", children: [
         /* @__PURE__ */ jsx("h3", { className: "text-sm font-medium text-gray-500", children: "Total Websites" }),
         /* @__PURE__ */ jsx("select", { className: "text-xs bg-transparent border-none text-gray-500 focus:outline-none", children: /* @__PURE__ */ jsx("option", { children: "This month" }) })
@@ -458,7 +553,7 @@ function MetricsGrid() {
         /* @__PURE__ */ jsx("div", { className: "flex gap-2", children: /* @__PURE__ */ jsx("span", { className: "px-3 py-1 bg-blue-500 text-white text-xs rounded-full", children: "Active" }) })
       ] })
     ] }),
-    /* @__PURE__ */ jsxs("div", { className: "bg-white p-4 lg:p-6 rounded-lg border border-gray-200 shadow-sm", children: [
+    /* @__PURE__ */ jsxs("div", { className: "bg-white p-4 lg:p-6 rounded-lg border border-gray-200 ", children: [
       /* @__PURE__ */ jsx("div", { className: "flex items-center justify-between mb-4", children: /* @__PURE__ */ jsx("h3", { className: "text-sm font-medium text-gray-500", children: "API Requests" }) }),
       /* @__PURE__ */ jsxs("div", { className: "mb-4", children: [
         /* @__PURE__ */ jsx("div", { className: "text-2xl font-bold text-gray-900", children: formatNumber(metrics.total_api_requests) }),
@@ -485,7 +580,7 @@ function MetricsGrid() {
         formatNumber(metrics.api_requests_this_month)
       ] })
     ] }),
-    /* @__PURE__ */ jsxs("div", { className: "bg-white p-4 lg:p-6 rounded-lg border border-gray-200 shadow-sm", children: [
+    /* @__PURE__ */ jsxs("div", { className: "bg-white p-4 lg:p-6 rounded-lg border border-gray-200 ", children: [
       /* @__PURE__ */ jsx("div", { className: "flex items-center justify-between mb-4", children: /* @__PURE__ */ jsx("h3", { className: "text-sm font-medium text-gray-500", children: "UI Customizations" }) }),
       /* @__PURE__ */ jsxs("div", { className: "mb-4", children: [
         /* @__PURE__ */ jsx("div", { className: "text-2xl font-bold text-gray-900", children: formatNumber(metrics.total_customizations) }),
@@ -515,12 +610,12 @@ function MetricsGrid() {
               fill: "none",
               stroke: "#3b82f6",
               strokeWidth: "2",
-              strokeDasharray: `${Math.min(metrics.customizations_this_month / Math.max(metrics.total_customizations, 1) * 100, 100)}, 100`
+              strokeDasharray: `${Math.min((metrics.customizations_this_month || 0) / Math.max(metrics.total_customizations || 0, 1) * 100, 100)}, 100`
             }
           )
         ] }),
         /* @__PURE__ */ jsx("div", { className: "absolute inset-0 flex items-center justify-center", children: /* @__PURE__ */ jsxs("span", { className: "text-lg font-bold text-gray-900", children: [
-          Math.min(metrics.customizations_this_month / Math.max(metrics.total_customizations, 1) * 100, 100).toFixed(0),
+          Math.min((metrics.customizations_this_month || 0) / Math.max(metrics.total_customizations || 0, 1) * 100, 100).toFixed(0),
           "%"
         ] }) })
       ] }),
@@ -531,38 +626,96 @@ function MetricsGrid() {
     ] })
   ] });
 }
-const analyticsData = [
-  { name: "JAN", value: 12.5, requests: 45e3 },
-  { name: "FEB", value: 15.2, requests: 52e3 },
-  { name: "MAR", value: 18.8, requests: 64e3 },
-  { name: "APR", value: 22.1, requests: 78e3 },
-  { name: "MAY", value: 28.2, requests: 95e3 },
-  { name: "JUN", value: 31.8, requests: 11e4 },
-  { name: "JUL", value: 35.5, requests: 125e3 },
-  { name: "AUG", value: 42.3, requests: 145e3 }
-];
-const usageData$1 = [
-  { name: "Active Usage", value: 73.2, color: "#3b82f6" },
-  { name: "Idle", value: 26.8, color: "#e5e7eb" }
-];
 function ChartsSection() {
+  const [analyticsData, setAnalyticsData] = useState([]);
+  const [usageData2, setUsageData] = useState([]);
+  const [customizationsByPlan, setCustomizationsByPlan] = useState(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [analytics, usage2, planData] = await Promise.all([
+          dashboardApi.getAnalyticsData().catch(() => []),
+          dashboardApi.getUsageData().catch(() => []),
+          dashboardApi.getCustomizationsByPlan().catch(() => null)
+        ]);
+        setAnalyticsData(Array.isArray(analytics) ? analytics : []);
+        setUsageData(Array.isArray(usage2) ? usage2 : [
+          { name: "Active Usage", value: 73.2, color: "#3b82f6" },
+          { name: "Idle", value: 26.8, color: "#e5e7eb" }
+        ]);
+        setCustomizationsByPlan(planData);
+      } catch (error) {
+        console.error("Failed to fetch charts data:", error);
+        setAnalyticsData([
+          { name: "JAN", value: 12.5, requests: 45e3, month: "01" },
+          { name: "FEB", value: 15.2, requests: 52e3, month: "02" },
+          { name: "MAR", value: 18.8, requests: 64e3, month: "03" },
+          { name: "APR", value: 22.1, requests: 78e3, month: "04" },
+          { name: "MAY", value: 28.2, requests: 95e3, month: "05" },
+          { name: "JUN", value: 31.8, requests: 11e4, month: "06" },
+          { name: "JUL", value: 35.5, requests: 125e3, month: "07" },
+          { name: "AUG", value: 42.3, requests: 145e3, month: "08" }
+        ]);
+        setUsageData([
+          { name: "Active Usage", value: 73.2, color: "#3b82f6" },
+          { name: "Idle", value: 26.8, color: "#e5e7eb" }
+        ]);
+        setCustomizationsByPlan({
+          total: 3456,
+          growth: 18,
+          premium: { count: 2340, percentage: 68 },
+          free: { count: 1116, percentage: 32 }
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+  const formatNumber = (num) => {
+    if (num >= 1e6) return (num / 1e6).toFixed(1) + "M";
+    if (num >= 1e3) return (num / 1e3).toFixed(1) + "K";
+    return num.toLocaleString();
+  };
+  analyticsData.length > 0 ? analyticsData[analyticsData.length - 1]?.value || 0 : 0;
+  const monthlyGrowth = analyticsData.length > 1 ? ((analyticsData[analyticsData.length - 1]?.requests || 0) - (analyticsData[analyticsData.length - 2]?.requests || 0)) / Math.max(analyticsData[analyticsData.length - 2]?.requests || 1, 1) * 100 : 0;
+  usageData2.find((d) => d.name === "Active Usage")?.value || 73.2;
+  if (loading) {
+    return /* @__PURE__ */ jsx("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6", children: [1, 2, 3].map((i) => /* @__PURE__ */ jsxs("div", { className: "bg-white p-4 lg:p-6 rounded-lg border border-gray-200 animate-pulse", children: [
+      /* @__PURE__ */ jsx("div", { className: "h-4 bg-gray-200 rounded w-1/3 mb-4" }),
+      /* @__PURE__ */ jsx("div", { className: "h-48 bg-gray-200 rounded mb-4" }),
+      /* @__PURE__ */ jsx("div", { className: "h-3 bg-gray-200 rounded w-1/4" })
+    ] }, i)) });
+  }
   return /* @__PURE__ */ jsxs("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6", children: [
-    /* @__PURE__ */ jsxs("div", { className: "bg-white p-4 lg:p-6 rounded-lg border border-gray-200 shadow-sm", children: [
+    /* @__PURE__ */ jsxs("div", { className: "bg-white p-4 lg:p-6 rounded-lg border border-gray-200 ", children: [
       /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between mb-6", children: [
         /* @__PURE__ */ jsxs("div", { children: [
           /* @__PURE__ */ jsx("h3", { className: "text-sm font-medium text-gray-500 mb-2", children: "API Usage Growth" }),
-          /* @__PURE__ */ jsxs("div", { className: "flex items-baseline space-x-2", children: [
-            /* @__PURE__ */ jsx("span", { className: "text-2xl font-bold text-gray-900", children: "+42.3%" }),
+          /* @__PURE__ */ jsx("div", { className: "flex items-baseline space-x-2", children: analyticsData.length > 0 ? /* @__PURE__ */ jsxs(Fragment, { children: [
+            /* @__PURE__ */ jsxs("span", { className: "text-2xl font-bold text-gray-900", children: [
+              monthlyGrowth > 0 ? "+" : "",
+              monthlyGrowth.toFixed(1),
+              "%"
+            ] }),
             /* @__PURE__ */ jsx("span", { className: "text-sm text-gray-500", children: "Growth" }),
-            /* @__PURE__ */ jsx("span", { className: "text-sm text-green-500", children: "+12.8%" })
-          ] })
+            /* @__PURE__ */ jsxs("span", { className: `text-sm ${monthlyGrowth > 0 ? "text-green-500" : monthlyGrowth < 0 ? "text-red-500" : "text-gray-500"}`, children: [
+              monthlyGrowth > 0 ? "+" : "",
+              monthlyGrowth.toFixed(1),
+              "%"
+            ] })
+          ] }) : /* @__PURE__ */ jsxs(Fragment, { children: [
+            /* @__PURE__ */ jsx("span", { className: "text-2xl font-bold text-gray-900", children: "0%" }),
+            /* @__PURE__ */ jsx("span", { className: "text-sm text-gray-500", children: "No growth data" })
+          ] }) })
         ] }),
         /* @__PURE__ */ jsxs("div", { className: "flex items-center space-x-2", children: [
           /* @__PURE__ */ jsx("select", { className: "text-xs bg-transparent border-none text-gray-500 focus:outline-none", children: /* @__PURE__ */ jsx("option", { children: "This year" }) }),
           /* @__PURE__ */ jsx("button", { className: "p-2 hover:bg-gray-100 rounded", children: /* @__PURE__ */ jsx(Filter, { className: "w-4 h-4 text-gray-500" }) })
         ] })
       ] }),
-      /* @__PURE__ */ jsx("div", { className: "h-48 lg:h-64", children: /* @__PURE__ */ jsx(ResponsiveContainer, { width: "100%", height: "100%", children: /* @__PURE__ */ jsxs(AreaChart, { data: analyticsData, children: [
+      /* @__PURE__ */ jsx("div", { className: "h-48 lg:h-64", children: analyticsData.length > 0 ? /* @__PURE__ */ jsx(ResponsiveContainer, { width: "100%", height: "100%", children: /* @__PURE__ */ jsxs(AreaChart, { data: analyticsData, children: [
         /* @__PURE__ */ jsx("defs", { children: /* @__PURE__ */ jsxs("linearGradient", { id: "colorValue", x1: "0", y1: "0", x2: "0", y2: "1", children: [
           /* @__PURE__ */ jsx("stop", { offset: "5%", stopColor: "#3b82f6", stopOpacity: 0.8 }),
           /* @__PURE__ */ jsx("stop", { offset: "95%", stopColor: "#3b82f6", stopOpacity: 0.1 })
@@ -581,84 +734,63 @@ function ChartsSection() {
           {
             axisLine: false,
             tickLine: false,
-            tick: { fontSize: 12, fill: "#6b7280" }
+            tick: { fontSize: 12, fill: "#6b7280" },
+            domain: [0, "dataMax"]
           }
         ),
         /* @__PURE__ */ jsx(
           Area,
           {
             type: "monotone",
-            dataKey: "value",
+            dataKey: "requests",
             stroke: "#3b82f6",
             fillOpacity: 1,
             fill: "url(#colorValue)",
             strokeWidth: 2
           }
         )
+      ] }) }) : /* @__PURE__ */ jsx("div", { className: "flex items-center justify-center h-full text-gray-400", children: /* @__PURE__ */ jsxs("div", { className: "text-center", children: [
+        /* @__PURE__ */ jsx("p", { className: "text-sm", children: "No data available" }),
+        /* @__PURE__ */ jsx("p", { className: "text-xs mt-1", children: "Start making API requests to see analytics" })
       ] }) }) }),
-      /* @__PURE__ */ jsx("div", { className: "mt-4 text-center", children: /* @__PURE__ */ jsx("div", { className: "text-sm text-green-500", children: "+28%" }) })
+      /* @__PURE__ */ jsx("div", { className: "mt-4 text-center", children: /* @__PURE__ */ jsx("div", { className: "text-sm text-gray-500", children: analyticsData.length > 0 ? `${analyticsData.length} months of data` : "No data" }) })
     ] }),
-    /* @__PURE__ */ jsxs("div", { className: "bg-white p-4 lg:p-6 rounded-lg border border-gray-200 shadow-sm", children: [
-      /* @__PURE__ */ jsx("div", { className: "flex items-center justify-between mb-6", children: /* @__PURE__ */ jsx("h3", { className: "text-sm font-medium text-gray-500", children: "Platform Performance" }) }),
-      /* @__PURE__ */ jsxs("div", { className: "mb-4", children: [
-        /* @__PURE__ */ jsx("div", { className: "text-2xl font-bold text-gray-900", children: "73.2%" }),
-        /* @__PURE__ */ jsx("div", { className: "text-sm text-gray-500", children: "Active usage" })
-      ] }),
-      /* @__PURE__ */ jsx("div", { className: "h-24 lg:h-32 mb-4", children: /* @__PURE__ */ jsx(ResponsiveContainer, { width: "100%", height: "100%", children: /* @__PURE__ */ jsx(PieChart$1, { children: /* @__PURE__ */ jsx(
-        Pie,
-        {
-          data: usageData$1,
-          cx: "50%",
-          cy: "50%",
-          innerRadius: 40,
-          outerRadius: 60,
-          startAngle: 90,
-          endAngle: 450,
-          dataKey: "value",
-          stroke: "none",
-          children: usageData$1.map((entry2, index) => /* @__PURE__ */ jsx(Cell, { fill: entry2.color }, `cell-${index}`))
-        }
-      ) }) }) }),
-      /* @__PURE__ */ jsxs("div", { className: "space-y-2", children: [
-        /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between text-sm", children: [
-          /* @__PURE__ */ jsxs("div", { className: "flex items-center", children: [
-            /* @__PURE__ */ jsx("div", { className: "w-3 h-3 bg-blue-500 rounded mr-2" }),
-            /* @__PURE__ */ jsx("span", { className: "text-gray-600", children: "Active API usage" })
-          ] }),
-          /* @__PURE__ */ jsx("span", { className: "font-medium text-gray-900", children: "Daily average" })
-        ] }),
-        /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between text-sm", children: [
-          /* @__PURE__ */ jsxs("div", { className: "flex items-center", children: [
-            /* @__PURE__ */ jsx("div", { className: "w-3 h-3 bg-gray-300 rounded mr-2" }),
-            /* @__PURE__ */ jsx("span", { className: "text-gray-600", children: "Idle time" })
-          ] }),
-          /* @__PURE__ */ jsx("span", { className: "font-medium text-gray-900", children: "Per account" })
-        ] })
-      ] }),
-      /* @__PURE__ */ jsx("button", { className: "mt-4 text-sm text-gray-500 hover:text-gray-700 flex items-center", children: "See Details →" })
-    ] }),
-    /* @__PURE__ */ jsxs("div", { className: "bg-white p-4 lg:p-6 rounded-lg border border-gray-200 shadow-sm", children: [
+    /* @__PURE__ */ jsxs("div", { className: "bg-white p-4 lg:p-6 rounded-lg border border-gray-200 ", children: [
       /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between mb-6", children: [
         /* @__PURE__ */ jsxs("div", { children: [
-          /* @__PURE__ */ jsx("h3", { className: "text-sm font-medium text-gray-500", children: "UI Customizations by Plan" }),
+          /* @__PURE__ */ jsx("h3", { className: "text-sm font-medium text-gray-500", children: "UI Customizations" }),
           /* @__PURE__ */ jsxs("div", { className: "mt-2", children: [
-            /* @__PURE__ */ jsx("div", { className: "text-2xl font-bold text-gray-900", children: "3,456" }),
-            /* @__PURE__ */ jsx("div", { className: "text-sm text-green-500", children: "+18%" })
+            /* @__PURE__ */ jsx("div", { className: "text-2xl font-bold text-gray-900", children: formatNumber(customizationsByPlan?.total || 0) }),
+            /* @__PURE__ */ jsx("div", { className: "text-sm text-gray-500", children: "Total customizations" })
           ] })
         ] }),
         /* @__PURE__ */ jsx("button", { className: "text-gray-400 hover:text-gray-600", children: "⋯" })
       ] }),
-      /* @__PURE__ */ jsxs("div", { className: "space-y-2", children: [
-        /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between text-xs text-gray-500", children: [
-          /* @__PURE__ */ jsx("span", { children: "Premium" }),
-          /* @__PURE__ */ jsx("span", { children: "2,340 customizations" })
+      customizationsByPlan && customizationsByPlan.total > 0 ? /* @__PURE__ */ jsxs(Fragment, { children: [
+        /* @__PURE__ */ jsxs("div", { className: "space-y-2", children: [
+          /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between text-xs text-gray-500", children: [
+            /* @__PURE__ */ jsx("span", { children: "Premium" }),
+            /* @__PURE__ */ jsxs("span", { children: [
+              formatNumber(customizationsByPlan.premium?.count || 0),
+              " customizations"
+            ] })
+          ] }),
+          /* @__PURE__ */ jsx("div", { className: "w-full bg-gray-200 rounded-full h-2", children: /* @__PURE__ */ jsx("div", { className: "bg-blue-500 h-2 rounded-full", style: { width: `${customizationsByPlan.premium?.percentage || 0}%` } }) })
         ] }),
-        /* @__PURE__ */ jsx("div", { className: "w-full bg-gray-200 rounded-full h-2", children: /* @__PURE__ */ jsx("div", { className: "bg-blue-500 h-2 rounded-full", style: { width: "68%" } }) })
-      ] }),
-      /* @__PURE__ */ jsxs("div", { className: "mt-4 space-y-2", children: [
-        /* @__PURE__ */ jsx("div", { className: "flex items-center justify-between text-xs text-gray-500", children: /* @__PURE__ */ jsx("span", { children: "Free" }) }),
-        /* @__PURE__ */ jsx("div", { className: "w-full bg-gray-200 rounded-full h-2", children: /* @__PURE__ */ jsx("div", { className: "bg-blue-400 h-2 rounded-full", style: { width: "32%" } }) })
-      ] })
+        /* @__PURE__ */ jsxs("div", { className: "mt-4 space-y-2", children: [
+          /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between text-xs text-gray-500", children: [
+            /* @__PURE__ */ jsx("span", { children: "Free" }),
+            /* @__PURE__ */ jsxs("span", { children: [
+              formatNumber(customizationsByPlan.free?.count || 0),
+              " customizations"
+            ] })
+          ] }),
+          /* @__PURE__ */ jsx("div", { className: "w-full bg-gray-200 rounded-full h-2", children: /* @__PURE__ */ jsx("div", { className: "bg-blue-400 h-2 rounded-full", style: { width: `${customizationsByPlan.free?.percentage || 0}%` } }) })
+        ] })
+      ] }) : /* @__PURE__ */ jsx("div", { className: "flex items-center justify-center h-24 text-gray-400", children: /* @__PURE__ */ jsxs("div", { className: "text-center", children: [
+        /* @__PURE__ */ jsx("p", { className: "text-sm", children: "No customizations yet" }),
+        /* @__PURE__ */ jsx("p", { className: "text-xs mt-1", children: "Start customizing your websites" })
+      ] }) })
     ] })
   ] });
 }
@@ -669,9 +801,10 @@ function DataTable() {
     const fetchActivities = async () => {
       try {
         const data = await dashboardApi.getRecentActivity();
-        setActivities(data);
+        setActivities(Array.isArray(data) ? data : []);
       } catch (error) {
         console.error("Failed to fetch recent activity:", error);
+        setActivities([]);
       } finally {
         setLoading(false);
       }
@@ -679,7 +812,9 @@ function DataTable() {
     fetchActivities();
   }, []);
   const formatDate = (dateString) => {
+    if (!dateString) return "N/A";
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "Invalid Date";
     return date.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
@@ -688,7 +823,7 @@ function DataTable() {
     });
   };
   if (loading) {
-    return /* @__PURE__ */ jsxs("div", { className: "bg-white rounded-lg border border-gray-200 shadow-sm", children: [
+    return /* @__PURE__ */ jsxs("div", { className: "bg-white rounded-lg border border-gray-200 ", children: [
       /* @__PURE__ */ jsx("div", { className: "p-4 lg:p-6 border-b border-gray-200", children: /* @__PURE__ */ jsx("div", { className: "h-6 bg-gray-200 rounded w-1/4 animate-pulse" }) }),
       /* @__PURE__ */ jsx("div", { className: "p-4", children: /* @__PURE__ */ jsx("div", { className: "animate-pulse space-y-4", children: [1, 2, 3].map((i) => /* @__PURE__ */ jsxs("div", { className: "flex space-x-4", children: [
         /* @__PURE__ */ jsx("div", { className: "h-4 bg-gray-200 rounded w-1/4" }),
@@ -698,7 +833,7 @@ function DataTable() {
       ] }, i)) }) })
     ] });
   }
-  return /* @__PURE__ */ jsxs("div", { className: "bg-white rounded-lg border border-gray-200 shadow-sm", children: [
+  return /* @__PURE__ */ jsxs("div", { className: "bg-white rounded-lg border border-gray-200 ", children: [
     /* @__PURE__ */ jsx("div", { className: "p-4 lg:p-6 border-b border-gray-200", children: /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between", children: [
       /* @__PURE__ */ jsx("h3", { className: "text-lg font-medium text-gray-900", children: "Recent Activity" }),
       /* @__PURE__ */ jsx("button", { className: "text-sm text-gray-500 hover:text-gray-700 flex items-center", children: "View All →" })
@@ -715,12 +850,12 @@ function DataTable() {
       ] }) }),
       /* @__PURE__ */ jsx("tbody", { className: "bg-white divide-y divide-gray-200", children: activities.map((activity, index) => /* @__PURE__ */ jsxs("tr", { className: "hover:bg-gray-50", children: [
         /* @__PURE__ */ jsx("td", { className: "px-4 lg:px-6 py-4 whitespace-nowrap", children: /* @__PURE__ */ jsxs("div", { className: "flex items-center", children: [
-          /* @__PURE__ */ jsx("div", { className: "flex-shrink-0 h-8 w-8", children: /* @__PURE__ */ jsx("div", { className: "h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-xs font-medium", children: activity.website_id.charAt(0).toUpperCase() }) }),
-          /* @__PURE__ */ jsx("div", { className: "ml-3", children: /* @__PURE__ */ jsx("div", { className: "text-sm font-medium text-gray-900", children: activity.website_id.length > 20 ? activity.website_id.substring(0, 20) + "..." : activity.website_id }) })
+          /* @__PURE__ */ jsx("div", { className: "flex-shrink-0 h-8 w-8", children: /* @__PURE__ */ jsx("div", { className: "h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-xs font-medium", children: activity?.website_id ? activity.website_id.charAt(0).toUpperCase() : "N" }) }),
+          /* @__PURE__ */ jsx("div", { className: "ml-3", children: /* @__PURE__ */ jsx("div", { className: "text-sm font-medium text-gray-900", children: activity?.website_id && activity.website_id.length > 20 ? activity.website_id.substring(0, 20) + "..." : activity?.website_id || "N/A" }) })
         ] }) }),
-        /* @__PURE__ */ jsx("td", { className: "px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-500", children: formatDate(activity.snapshot_created_at) }),
-        /* @__PURE__ */ jsx("td", { className: "px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-900", children: activity.component_count.toLocaleString() }),
-        /* @__PURE__ */ jsx("td", { className: "px-4 lg:px-6 py-4 whitespace-nowrap", children: /* @__PURE__ */ jsx("span", { className: "inline-flex px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800", children: activity.customization_count }) })
+        /* @__PURE__ */ jsx("td", { className: "px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-500", children: activity?.snapshot_created_at ? formatDate(activity.snapshot_created_at) : "N/A" }),
+        /* @__PURE__ */ jsx("td", { className: "px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-900", children: (activity?.component_count ?? 0).toLocaleString() }),
+        /* @__PURE__ */ jsx("td", { className: "px-4 lg:px-6 py-4 whitespace-nowrap", children: /* @__PURE__ */ jsx("span", { className: "inline-flex px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800", children: activity?.customization_count ?? 0 }) })
       ] }, index)) })
     ] }) })
   ] });
@@ -753,6 +888,30 @@ const route1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
   __proto__: null,
   default: home
 }, Symbol.toStringTag, { value: "Module" }));
+const Input = React.forwardRef(
+  ({ className, type, icon, rightIcon, error, ...props }, ref) => {
+    return /* @__PURE__ */ jsxs("div", { className: "relative", children: [
+      icon && /* @__PURE__ */ jsx("div", { className: "absolute left-3 top-2 h-4 w-4 text-gray-400", children: icon }),
+      /* @__PURE__ */ jsx(
+        "input",
+        {
+          type,
+          className: cn(
+            "flex h-8 w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-50",
+            icon && "pl-9",
+            rightIcon && "pr-9",
+            error && "border-red-500 focus:ring-red-500 focus:border-red-500",
+            className
+          ),
+          ref,
+          ...props
+        }
+      ),
+      rightIcon && /* @__PURE__ */ jsx("div", { className: "absolute right-3 top-2 h-4 w-4 text-gray-400", children: rightIcon })
+    ] });
+  }
+);
+Input.displayName = "Input";
 const accounts = [{
   id: 1,
   name: "Acme Corp",
@@ -823,15 +982,15 @@ const accounts_default = UNSAFE_withComponentProps(function Accounts() {
         })]
       }), /* @__PURE__ */ jsxs("div", {
         className: "flex items-center space-x-4",
-        children: [/* @__PURE__ */ jsxs("div", {
-          className: "relative flex-1 max-w-md",
-          children: [/* @__PURE__ */ jsx(Search, {
-            className: "absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400"
-          }), /* @__PURE__ */ jsx("input", {
+        children: [/* @__PURE__ */ jsx("div", {
+          className: "flex-1 max-w-md",
+          children: /* @__PURE__ */ jsx(Input, {
             type: "text",
             placeholder: "Search accounts...",
-            className: "pl-10 pr-4 py-2 w-full bg-white border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          })]
+            icon: /* @__PURE__ */ jsx(Search, {
+              className: "h-4 w-4"
+            })
+          })
         }), /* @__PURE__ */ jsxs("button", {
           className: "flex items-center space-x-2 px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50",
           children: [/* @__PURE__ */ jsx(Filter, {
@@ -841,7 +1000,7 @@ const accounts_default = UNSAFE_withComponentProps(function Accounts() {
           })]
         })]
       }), /* @__PURE__ */ jsx("div", {
-        className: "bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden",
+        className: "bg-white rounded-lg border border-gray-200  overflow-hidden",
         children: /* @__PURE__ */ jsx("div", {
           className: "overflow-x-auto",
           children: /* @__PURE__ */ jsxs("table", {
@@ -1069,15 +1228,15 @@ const uiLayers_default = UNSAFE_withComponentProps(function UILayers() {
         })]
       }), /* @__PURE__ */ jsxs("div", {
         className: "flex items-center space-x-4",
-        children: [/* @__PURE__ */ jsxs("div", {
-          className: "relative flex-1 max-w-md",
-          children: [/* @__PURE__ */ jsx(Search, {
-            className: "absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400"
-          }), /* @__PURE__ */ jsx("input", {
+        children: [/* @__PURE__ */ jsx("div", {
+          className: "flex-1 max-w-md",
+          children: /* @__PURE__ */ jsx(Input, {
             type: "text",
             placeholder: "Search UI layers...",
-            className: "pl-10 pr-4 py-2 w-full bg-white border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          })]
+            icon: /* @__PURE__ */ jsx(Search, {
+              className: "h-4 w-4"
+            })
+          })
         }), /* @__PURE__ */ jsxs("select", {
           className: "px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500",
           children: [/* @__PURE__ */ jsx("option", {
@@ -1100,7 +1259,7 @@ const uiLayers_default = UNSAFE_withComponentProps(function UILayers() {
       }), /* @__PURE__ */ jsx("div", {
         className: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6",
         children: uiLayers.map((layer) => /* @__PURE__ */ jsx("div", {
-          className: "bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow",
+          className: "bg-white rounded-lg border border-gray-200  hover:-md transition-",
           children: /* @__PURE__ */ jsxs("div", {
             className: "p-6",
             children: [/* @__PURE__ */ jsxs("div", {
@@ -1196,68 +1355,76 @@ const route3 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
   __proto__: null,
   default: uiLayers_default
 }, Symbol.toStringTag, { value: "Module" }));
-const customizations = [{
-  id: 1,
-  name: "E-commerce Header",
-  description: "Custom header with shopping cart integration",
-  account: "Acme Corp",
-  layer: "Header Component",
-  status: "Live",
-  requests: "2,341",
-  lastUsed: "5 minutes ago",
-  created: "2024-04-10",
-  performance: "98.5%"
-}, {
-  id: 2,
-  name: "Dark Mode Blog",
-  description: "Blog layout with dark theme customizations",
-  account: "TechStart Inc",
-  layer: "Dark Theme",
-  status: "Live",
-  requests: "1,876",
-  lastUsed: "2 hours ago",
-  created: "2024-03-22",
-  performance: "97.2%"
-}, {
-  id: 3,
-  name: "Mobile Dashboard",
-  description: "Responsive dashboard for mobile app",
-  account: "BuildCo Ltd",
-  layer: "Mobile Layout",
-  status: "Testing",
-  requests: "156",
-  lastUsed: "1 day ago",
-  created: "2024-04-15",
-  performance: "94.8%"
-}, {
-  id: 4,
-  name: "Contact Form Styling",
-  description: "Branded contact form with validation",
-  account: "Design Studio",
-  layer: "Form Elements",
-  status: "Draft",
-  requests: "0",
-  lastUsed: "Never",
-  created: "2024-04-18",
-  performance: "-"
-}, {
-  id: 5,
-  name: "Premium Button Set",
-  description: "Animated buttons for premium features",
-  account: "StartupXYZ",
-  layer: "Button Variants",
-  status: "Live",
-  requests: "3,102",
-  lastUsed: "30 minutes ago",
-  created: "2024-02-28",
-  performance: "99.1%"
-}];
-const statusColors = {
-  Live: "bg-green-100 text-green-800",
-  Testing: "bg-yellow-100 text-yellow-800",
-  Draft: "bg-gray-100 text-gray-800"
-};
-const customizations_default = UNSAFE_withComponentProps(function Customizations() {
+const websites = UNSAFE_withComponentProps(function Websites() {
+  const [websites2, setWebsites] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newWebsite, setNewWebsite] = useState({
+    name: "",
+    url: "",
+    description: ""
+  });
+  useEffect(() => {
+    const token = localStorage.getItem("auth_token");
+    const user = localStorage.getItem("user");
+    console.log("Auth token exists:", !!token);
+    console.log("User data exists:", !!user);
+    fetchWebsites();
+  }, []);
+  const fetchWebsites = async () => {
+    try {
+      setLoading(true);
+      const response = await websitesApi.list();
+      console.log("Fetched websites data:", response);
+      const data = response?.data || response;
+      const websitesArray = Array.isArray(data) ? data : [];
+      console.log("Setting websites state to:", websitesArray);
+      setWebsites(websitesArray);
+    } catch (error) {
+      console.error("Failed to fetch websites:", error);
+      toast.error("Failed to load websites");
+      setWebsites([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+  const handleCreateWebsite = async (e) => {
+    e.preventDefault();
+    try {
+      const result = await websitesApi.create(newWebsite);
+      console.log("Created website:", result);
+      await fetchWebsites();
+      setShowCreateModal(false);
+      setNewWebsite({
+        name: "",
+        url: "",
+        description: ""
+      });
+      toast.success("Website created successfully");
+    } catch (error) {
+      console.error("Failed to create website:", error);
+      toast.error("Failed to create website");
+    }
+  };
+  const copyHashKey = (hashKey) => {
+    navigator.clipboard.writeText(hashKey);
+    toast.success("Hash key copied to clipboard");
+  };
+  const copyJSSnippet = (hashKey) => {
+    const snippet = `<script src="https://app.kuttl.xyz/kuttl.js" data-website="${hashKey}"><\/script>`;
+    navigator.clipboard.writeText(snippet);
+    toast.success("JavaScript snippet copied to clipboard");
+  };
+  const truncateHashKey = (hashKey, maxLength = 20) => {
+    if (hashKey.length <= maxLength) return hashKey;
+    const start = hashKey.substring(0, Math.floor(maxLength / 2) - 2);
+    const end = hashKey.substring(hashKey.length - Math.floor(maxLength / 2) + 2);
+    return `${start}...${end}`;
+  };
+  const filteredWebsites = (Array.isArray(websites2) ? websites2 : []).filter((website) => website.name?.toLowerCase().includes(searchQuery.toLowerCase()) || website.url?.toLowerCase().includes(searchQuery.toLowerCase()) || website.description && website.description.toLowerCase().includes(searchQuery.toLowerCase()));
+  console.log("Websites state:", websites2);
+  console.log("Filtered websites:", filteredWebsites);
   return /* @__PURE__ */ jsx(DashboardLayout, {
     children: /* @__PURE__ */ jsxs("div", {
       className: "space-y-6",
@@ -1266,17 +1433,359 @@ const customizations_default = UNSAFE_withComponentProps(function Customizations
         children: [/* @__PURE__ */ jsxs("div", {
           children: [/* @__PURE__ */ jsx("h1", {
             className: "text-2xl font-bold text-gray-900",
-            children: "Customizations"
+            children: "My Websites"
           }), /* @__PURE__ */ jsx("p", {
             className: "text-sm text-gray-500",
-            children: "Monitor active UI customizations and their performance"
+            children: "Manage your websites and their tracking keys"
+          })]
+        }), /* @__PURE__ */ jsxs("button", {
+          onClick: () => setShowCreateModal(true),
+          className: "bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium flex items-center space-x-2",
+          children: [/* @__PURE__ */ jsx(Plus, {
+            className: "w-4 h-4"
+          }), /* @__PURE__ */ jsx("span", {
+            children: "Add Website"
+          })]
+        })]
+      }), /* @__PURE__ */ jsx("div", {
+        className: "flex items-center space-x-4",
+        children: /* @__PURE__ */ jsx("div", {
+          className: "flex-1 max-w-md",
+          children: /* @__PURE__ */ jsx(Input, {
+            type: "text",
+            placeholder: "Search websites...",
+            icon: /* @__PURE__ */ jsx(Search, {
+              className: "h-4 w-4"
+            }),
+            value: searchQuery,
+            onChange: (e) => setSearchQuery(e.target.value)
+          })
+        })
+      }), /* @__PURE__ */ jsx("div", {
+        className: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6",
+        children: loading ? (
+          // Loading skeleton
+          Array.from({
+            length: 3
+          }).map((_, i) => /* @__PURE__ */ jsxs("div", {
+            className: "bg-white rounded-lg border border-gray-200 p-6 animate-pulse",
+            children: [/* @__PURE__ */ jsx("div", {
+              className: "h-4 bg-gray-200 rounded w-3/4 mb-2"
+            }), /* @__PURE__ */ jsx("div", {
+              className: "h-3 bg-gray-200 rounded w-1/2 mb-4"
+            }), /* @__PURE__ */ jsx("div", {
+              className: "h-8 bg-gray-200 rounded mb-4"
+            }), /* @__PURE__ */ jsxs("div", {
+              className: "flex space-x-2",
+              children: [/* @__PURE__ */ jsx("div", {
+                className: "h-8 bg-gray-200 rounded flex-1"
+              }), /* @__PURE__ */ jsx("div", {
+                className: "h-8 bg-gray-200 rounded w-8"
+              })]
+            })]
+          }, i))
+        ) : filteredWebsites.length === 0 ? /* @__PURE__ */ jsx("div", {
+          className: "col-span-full",
+          children: /* @__PURE__ */ jsxs("div", {
+            className: "text-center py-12",
+            children: [/* @__PURE__ */ jsx(Globe, {
+              className: "mx-auto h-12 w-12 text-gray-400"
+            }), /* @__PURE__ */ jsx("h3", {
+              className: "mt-2 text-sm font-medium text-gray-900",
+              children: "No websites"
+            }), /* @__PURE__ */ jsx("p", {
+              className: "mt-1 text-sm text-gray-500",
+              children: websites2.length === 0 ? "Get started by adding your first website" : "No websites match your search"
+            }), websites2.length === 0 && /* @__PURE__ */ jsx("div", {
+              className: "mt-6",
+              children: /* @__PURE__ */ jsxs("button", {
+                onClick: () => setShowCreateModal(true),
+                className: "inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700",
+                children: [/* @__PURE__ */ jsx(Plus, {
+                  className: "mr-2 h-4 w-4"
+                }), "Add Website"]
+              })
+            })]
+          })
+        }) : filteredWebsites.map((website) => /* @__PURE__ */ jsxs("div", {
+          className: "bg-white rounded-lg border border-gray-200 p-6 hover:border-gray-300 transition-colors",
+          children: [/* @__PURE__ */ jsxs("div", {
+            className: "flex items-start justify-between mb-4",
+            children: [/* @__PURE__ */ jsxs("div", {
+              className: "flex-1",
+              children: [/* @__PURE__ */ jsx("h3", {
+                className: "text-lg font-semibold text-gray-900 mb-1",
+                children: website.name
+              }), /* @__PURE__ */ jsxs("a", {
+                href: website.url,
+                target: "_blank",
+                rel: "noopener noreferrer",
+                className: "text-sm text-blue-600 hover:text-blue-800 flex items-center",
+                children: [website.url, /* @__PURE__ */ jsx(ExternalLink, {
+                  className: "ml-1 h-3 w-3"
+                })]
+              }), website.description && /* @__PURE__ */ jsx("p", {
+                className: "text-sm text-gray-600 mt-2",
+                children: website.description
+              })]
+            }), /* @__PURE__ */ jsxs("div", {
+              className: "flex items-center space-x-1",
+              children: [/* @__PURE__ */ jsx("button", {
+                className: "p-1 text-gray-400 hover:text-gray-600",
+                children: /* @__PURE__ */ jsx(Eye, {
+                  className: "h-4 w-4"
+                })
+              }), /* @__PURE__ */ jsx("button", {
+                className: "p-1 text-gray-400 hover:text-gray-600",
+                children: /* @__PURE__ */ jsx(Settings, {
+                  className: "h-4 w-4"
+                })
+              }), /* @__PURE__ */ jsx("button", {
+                className: "p-1 text-gray-400 hover:text-red-600",
+                children: /* @__PURE__ */ jsx(Trash2, {
+                  className: "h-4 w-4"
+                })
+              })]
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: "space-y-3",
+            children: [/* @__PURE__ */ jsxs("div", {
+              children: [/* @__PURE__ */ jsx("label", {
+                className: "text-xs font-medium text-gray-500 uppercase tracking-wider",
+                children: "Website Key"
+              }), /* @__PURE__ */ jsxs("div", {
+                className: "flex items-center space-x-2 mt-1",
+                children: [/* @__PURE__ */ jsx("code", {
+                  className: "flex-1 text-xs bg-gray-100 px-2 py-1 rounded font-mono",
+                  title: website.hash_key,
+                  children: truncateHashKey(website.hash_key)
+                }), /* @__PURE__ */ jsx("button", {
+                  onClick: () => copyHashKey(website.hash_key),
+                  className: "p-1 text-gray-400 hover:text-gray-600",
+                  title: "Copy hash key",
+                  children: /* @__PURE__ */ jsx(Copy, {
+                    className: "h-4 w-4"
+                  })
+                })]
+              })]
+            }), /* @__PURE__ */ jsxs("div", {
+              className: "flex items-center justify-between text-sm text-gray-500",
+              children: [/* @__PURE__ */ jsxs("span", {
+                children: [website.total_requests, " requests"]
+              }), /* @__PURE__ */ jsx("span", {
+                className: `px-2 py-1 rounded-full text-xs ${website.is_active ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}`,
+                children: website.is_active ? "Active" : "Inactive"
+              })]
+            }), /* @__PURE__ */ jsx("div", {
+              className: "flex space-x-2",
+              children: /* @__PURE__ */ jsx("button", {
+                onClick: () => copyJSSnippet(website.hash_key),
+                className: "flex-1 bg-blue-50 text-blue-600 px-3 py-2 rounded text-sm font-medium hover:bg-blue-100 transition-colors",
+                children: "Copy JS Snippet"
+              })
+            })]
+          })]
+        }, website.id))
+      }), showCreateModal && /* @__PURE__ */ jsx("div", {
+        className: "fixed inset-0 z-50 overflow-y-auto",
+        children: /* @__PURE__ */ jsxs("div", {
+          className: "flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0",
+          children: [/* @__PURE__ */ jsx("div", {
+            className: "fixed inset-0 transition-opacity",
+            "aria-hidden": "true",
+            onClick: () => setShowCreateModal(false),
+            children: /* @__PURE__ */ jsx("div", {
+              className: "absolute inset-0 bg-gray-500 opacity-75"
+            })
+          }), /* @__PURE__ */ jsx("span", {
+            className: "hidden sm:inline-block sm:align-middle sm:h-screen",
+            "aria-hidden": "true",
+            children: "​"
+          }), /* @__PURE__ */ jsx("div", {
+            className: "inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full relative z-10",
+            children: /* @__PURE__ */ jsxs("form", {
+              onSubmit: handleCreateWebsite,
+              children: [/* @__PURE__ */ jsx("div", {
+                className: "bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4",
+                children: /* @__PURE__ */ jsx("div", {
+                  className: "sm:flex sm:items-start",
+                  children: /* @__PURE__ */ jsxs("div", {
+                    className: "mt-3 text-center sm:mt-0 sm:text-left w-full",
+                    children: [/* @__PURE__ */ jsx("h3", {
+                      className: "text-lg leading-6 font-medium text-gray-900 mb-4",
+                      children: "Add New Website"
+                    }), /* @__PURE__ */ jsxs("div", {
+                      className: "space-y-4",
+                      children: [/* @__PURE__ */ jsxs("div", {
+                        children: [/* @__PURE__ */ jsx("label", {
+                          className: "block text-sm font-medium text-gray-700 mb-1",
+                          children: "Website Name *"
+                        }), /* @__PURE__ */ jsx("input", {
+                          type: "text",
+                          required: true,
+                          className: "w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500",
+                          placeholder: "My Awesome Website",
+                          value: newWebsite.name,
+                          onChange: (e) => setNewWebsite({
+                            ...newWebsite,
+                            name: e.target.value
+                          })
+                        })]
+                      }), /* @__PURE__ */ jsxs("div", {
+                        children: [/* @__PURE__ */ jsx("label", {
+                          className: "block text-sm font-medium text-gray-700 mb-1",
+                          children: "Website URL *"
+                        }), /* @__PURE__ */ jsx("input", {
+                          type: "url",
+                          required: true,
+                          className: "w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500",
+                          placeholder: "https://mywebsite.com",
+                          value: newWebsite.url,
+                          onChange: (e) => setNewWebsite({
+                            ...newWebsite,
+                            url: e.target.value
+                          })
+                        })]
+                      }), /* @__PURE__ */ jsxs("div", {
+                        children: [/* @__PURE__ */ jsx("label", {
+                          className: "block text-sm font-medium text-gray-700 mb-1",
+                          children: "Description (optional)"
+                        }), /* @__PURE__ */ jsx("textarea", {
+                          className: "w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500",
+                          rows: 3,
+                          placeholder: "Brief description of your website",
+                          value: newWebsite.description,
+                          onChange: (e) => setNewWebsite({
+                            ...newWebsite,
+                            description: e.target.value
+                          })
+                        })]
+                      })]
+                    })]
+                  })
+                })
+              }), /* @__PURE__ */ jsxs("div", {
+                className: "bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse",
+                children: [/* @__PURE__ */ jsx("button", {
+                  type: "submit",
+                  className: "w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm",
+                  children: "Create Website"
+                }), /* @__PURE__ */ jsx("button", {
+                  type: "button",
+                  onClick: () => setShowCreateModal(false),
+                  className: "mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm",
+                  children: "Cancel"
+                })]
+              })]
+            })
+          })]
+        })
+      })]
+    })
+  });
+});
+const route4 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  default: websites
+}, Symbol.toStringTag, { value: "Module" }));
+const statusColors = {
+  Applied: "bg-green-100 text-green-800",
+  Testing: "bg-yellow-100 text-yellow-800",
+  Pending: "bg-gray-100 text-gray-800",
+  Failed: "bg-red-100 text-red-800"
+};
+const customizations = UNSAFE_withComponentProps(function Customizations() {
+  const [customizations2, setCustomizations] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [websiteFilter, setWebsiteFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [websites2, setWebsites] = useState([]);
+  useEffect(() => {
+    fetchCustomizations();
+    fetchStats();
+  }, [statusFilter]);
+  useEffect(() => {
+    fetchWebsites();
+  }, []);
+  const fetchCustomizations = async () => {
+    try {
+      setLoading(true);
+      const data = await customizationsApi.list({
+        status: statusFilter === "all" ? void 0 : statusFilter,
+        limit: 50
+      });
+      setCustomizations(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Failed to fetch customizations:", error);
+      toast.error("Failed to load customizations");
+      setCustomizations([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+  const fetchStats = async () => {
+    try {
+      const data = await customizationsApi.getStats();
+      setStats(data);
+    } catch (error) {
+      console.error("Failed to fetch stats:", error);
+    }
+  };
+  const fetchWebsites = async () => {
+    try {
+      const response = await websitesApi.list();
+      console.log("Fetched websites for customizations:", response);
+      const data = response?.data || response;
+      const websitesArray = Array.isArray(data) ? data.map((w) => ({
+        id: w.id,
+        name: w.name,
+        url: w.url
+      })) : [];
+      console.log("Mapped websites:", websitesArray);
+      setWebsites(websitesArray);
+    } catch (error) {
+      console.error("Failed to fetch websites:", error);
+      setWebsites([]);
+    }
+  };
+  const formatTimeAgo = (dateString) => {
+    if (!dateString) return "Not applied";
+    const date = new Date(dateString);
+    const now = /* @__PURE__ */ new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMinutes = Math.floor(diffMs / (1e3 * 60));
+    const diffHours = Math.floor(diffMinutes / 60);
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffMinutes < 60) return `${diffMinutes} minutes ago`;
+    if (diffHours < 24) return `${diffHours} hours ago`;
+    return `${diffDays} days ago`;
+  };
+  const filteredCustomizations = (Array.isArray(customizations2) ? customizations2 : []).filter((custom) => {
+    const matchesSearch = custom.user_request.toLowerCase().includes(searchQuery.toLowerCase()) || custom.website_url.toLowerCase().includes(searchQuery.toLowerCase()) || custom.change_description.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesWebsite = websiteFilter === "all" || websites2.some((w) => w.id === websiteFilter && w.url === custom.website_url);
+    return matchesSearch && matchesWebsite;
+  });
+  return /* @__PURE__ */ jsx(DashboardLayout, {
+    children: /* @__PURE__ */ jsxs("div", {
+      className: "space-y-6",
+      children: [/* @__PURE__ */ jsxs("div", {
+        className: "flex items-center justify-between",
+        children: [/* @__PURE__ */ jsxs("div", {
+          children: [/* @__PURE__ */ jsx("h1", {
+            className: "text-2xl font-bold text-gray-900",
+            children: "Website Customizations"
+          }), /* @__PURE__ */ jsx("p", {
+            className: "text-sm text-gray-500",
+            children: "Track user-requested changes and modifications applied to their websites"
           })]
         }), /* @__PURE__ */ jsxs("button", {
           className: "bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium flex items-center space-x-2",
           children: [/* @__PURE__ */ jsx(Plus, {
             className: "w-4 h-4"
           }), /* @__PURE__ */ jsx("span", {
-            children: "New Customization"
+            children: "Apply New Change"
           })]
         })]
       }), /* @__PURE__ */ jsxs("div", {
@@ -1285,73 +1794,95 @@ const customizations_default = UNSAFE_withComponentProps(function Customizations
           className: "bg-white p-4 rounded-lg border border-gray-200",
           children: [/* @__PURE__ */ jsx("div", {
             className: "text-2xl font-bold text-gray-900",
-            children: "42"
+            children: stats?.total_changes || 0
           }), /* @__PURE__ */ jsx("div", {
             className: "text-sm text-gray-500",
-            children: "Active Customizations"
+            children: "Total Changes Applied"
           }), /* @__PURE__ */ jsx("div", {
             className: "text-xs text-green-500 mt-1",
-            children: "+8 this week"
+            children: "+15 this week"
+          })]
+        }), /* @__PURE__ */ jsxs("div", {
+          className: "bg-white p-4 rounded-lg border border-gray-200",
+          children: [/* @__PURE__ */ jsxs("div", {
+            className: "text-2xl font-bold text-gray-900",
+            children: [stats?.success_rate?.toFixed(1) || "0.0", "%"]
+          }), /* @__PURE__ */ jsx("div", {
+            className: "text-sm text-gray-500",
+            children: "Success Rate"
+          }), /* @__PURE__ */ jsx("div", {
+            className: "text-xs text-green-500 mt-1",
+            children: "+2.1% improvement"
           })]
         }), /* @__PURE__ */ jsxs("div", {
           className: "bg-white p-4 rounded-lg border border-gray-200",
           children: [/* @__PURE__ */ jsx("div", {
             className: "text-2xl font-bold text-gray-900",
-            children: "847K"
+            children: stats?.pending_changes || 0
           }), /* @__PURE__ */ jsx("div", {
             className: "text-sm text-gray-500",
-            children: "Total Requests"
+            children: "Pending Changes"
           }), /* @__PURE__ */ jsx("div", {
-            className: "text-xs text-green-500 mt-1",
-            children: "+12% vs last month"
+            className: "text-xs text-yellow-500 mt-1",
+            children: "Awaiting approval"
           })]
         }), /* @__PURE__ */ jsxs("div", {
           className: "bg-white p-4 rounded-lg border border-gray-200",
-          children: [/* @__PURE__ */ jsx("div", {
+          children: [/* @__PURE__ */ jsxs("div", {
             className: "text-2xl font-bold text-gray-900",
-            children: "97.8%"
+            children: [stats?.avg_apply_time?.toFixed(1) || "0.0", "s"]
           }), /* @__PURE__ */ jsx("div", {
             className: "text-sm text-gray-500",
-            children: "Avg Performance"
+            children: "Avg Apply Time"
           }), /* @__PURE__ */ jsx("div", {
             className: "text-xs text-green-500 mt-1",
-            children: "+0.3% improvement"
-          })]
-        }), /* @__PURE__ */ jsxs("div", {
-          className: "bg-white p-4 rounded-lg border border-gray-200",
-          children: [/* @__PURE__ */ jsx("div", {
-            className: "text-2xl font-bold text-gray-900",
-            children: "156ms"
-          }), /* @__PURE__ */ jsx("div", {
-            className: "text-sm text-gray-500",
-            children: "Avg Response Time"
-          }), /* @__PURE__ */ jsx("div", {
-            className: "text-xs text-green-500 mt-1",
-            children: "-12ms faster"
+            children: "-0.6s faster"
           })]
         })]
       }), /* @__PURE__ */ jsxs("div", {
         className: "flex items-center space-x-4",
-        children: [/* @__PURE__ */ jsxs("div", {
-          className: "relative flex-1 max-w-md",
-          children: [/* @__PURE__ */ jsx(Search, {
-            className: "absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400"
-          }), /* @__PURE__ */ jsx("input", {
+        children: [/* @__PURE__ */ jsx("div", {
+          className: "flex-1 max-w-md",
+          children: /* @__PURE__ */ jsx(Input, {
             type: "text",
             placeholder: "Search customizations...",
-            className: "pl-10 pr-4 py-2 w-full bg-white border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            icon: /* @__PURE__ */ jsx(Search, {
+              className: "h-4 w-4"
+            }),
+            value: searchQuery,
+            onChange: (e) => setSearchQuery(e.target.value)
+          })
+        }), /* @__PURE__ */ jsxs("select", {
+          className: "px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500",
+          value: statusFilter,
+          onChange: (e) => setStatusFilter(e.target.value),
+          children: [/* @__PURE__ */ jsx("option", {
+            value: "all",
+            children: "All Status"
+          }), /* @__PURE__ */ jsx("option", {
+            value: "Applied",
+            children: "Applied"
+          }), /* @__PURE__ */ jsx("option", {
+            value: "Testing",
+            children: "Testing"
+          }), /* @__PURE__ */ jsx("option", {
+            value: "Pending",
+            children: "Pending"
+          }), /* @__PURE__ */ jsx("option", {
+            value: "Failed",
+            children: "Failed"
           })]
         }), /* @__PURE__ */ jsxs("select", {
           className: "px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500",
+          value: websiteFilter,
+          onChange: (e) => setWebsiteFilter(e.target.value),
           children: [/* @__PURE__ */ jsx("option", {
-            children: "All Status"
-          }), /* @__PURE__ */ jsx("option", {
-            children: "Live"
-          }), /* @__PURE__ */ jsx("option", {
-            children: "Testing"
-          }), /* @__PURE__ */ jsx("option", {
-            children: "Draft"
-          })]
+            value: "all",
+            children: "All Websites"
+          }), Array.isArray(websites2) && websites2.map((website) => /* @__PURE__ */ jsx("option", {
+            value: website.id,
+            children: website.name
+          }, website.id))]
         }), /* @__PURE__ */ jsxs("button", {
           className: "flex items-center space-x-2 px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50",
           children: [/* @__PURE__ */ jsx(Filter, {
@@ -1361,7 +1892,7 @@ const customizations_default = UNSAFE_withComponentProps(function Customizations
           })]
         })]
       }), /* @__PURE__ */ jsx("div", {
-        className: "bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden",
+        className: "bg-white rounded-lg border border-gray-200  overflow-hidden",
         children: /* @__PURE__ */ jsx("div", {
           className: "overflow-x-auto",
           children: /* @__PURE__ */ jsxs("table", {
@@ -1371,56 +1902,96 @@ const customizations_default = UNSAFE_withComponentProps(function Customizations
               children: /* @__PURE__ */ jsxs("tr", {
                 children: [/* @__PURE__ */ jsx("th", {
                   className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
-                  children: "Customization"
+                  children: "User Request"
                 }), /* @__PURE__ */ jsx("th", {
                   className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
-                  children: "Account"
+                  children: "Change Applied"
+                }), /* @__PURE__ */ jsx("th", {
+                  className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
+                  children: "Website"
+                }), /* @__PURE__ */ jsx("th", {
+                  className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
+                  children: "Element Targeted"
+                }), /* @__PURE__ */ jsx("th", {
+                  className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
+                  children: "Type"
                 }), /* @__PURE__ */ jsx("th", {
                   className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
                   children: "Status"
                 }), /* @__PURE__ */ jsx("th", {
                   className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
-                  children: "Requests"
-                }), /* @__PURE__ */ jsx("th", {
-                  className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
-                  children: "Performance"
-                }), /* @__PURE__ */ jsx("th", {
-                  className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
-                  children: "Last Used"
-                }), /* @__PURE__ */ jsx("th", {
-                  className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
-                  children: "Actions"
+                  children: "Applied"
                 })]
               })
             }), /* @__PURE__ */ jsx("tbody", {
               className: "bg-white divide-y divide-gray-200",
-              children: customizations.map((custom) => /* @__PURE__ */ jsxs("tr", {
+              children: loading ? /* @__PURE__ */ jsx("tr", {
+                children: /* @__PURE__ */ jsx("td", {
+                  colSpan: 7,
+                  className: "px-6 py-12 text-center",
+                  children: /* @__PURE__ */ jsx("div", {
+                    className: "text-gray-500",
+                    children: "Loading customizations..."
+                  })
+                })
+              }) : filteredCustomizations.length === 0 ? /* @__PURE__ */ jsx("tr", {
+                children: /* @__PURE__ */ jsxs("td", {
+                  colSpan: 7,
+                  className: "px-6 py-12 text-center",
+                  children: [/* @__PURE__ */ jsx("div", {
+                    className: "text-gray-500",
+                    children: "No customizations found"
+                  }), /* @__PURE__ */ jsx("div", {
+                    className: "text-xs text-gray-400 mt-1",
+                    children: customizations2.length === 0 ? "No data available" : "No results match your search"
+                  })]
+                })
+              }) : filteredCustomizations.map((custom) => /* @__PURE__ */ jsxs("tr", {
                 className: "hover:bg-gray-50",
                 children: [/* @__PURE__ */ jsx("td", {
-                  className: "px-6 py-4 whitespace-nowrap",
+                  className: "px-6 py-4",
                   children: /* @__PURE__ */ jsxs("div", {
                     className: "flex items-center",
                     children: [/* @__PURE__ */ jsx("div", {
-                      className: "w-10 h-10 bg-blue-100 rounded flex items-center justify-center mr-4 flex-shrink-0",
+                      className: "w-8 h-8 bg-blue-100 rounded flex items-center justify-center mr-3 flex-shrink-0",
                       children: /* @__PURE__ */ jsx(Settings, {
-                        className: "w-5 h-5 text-blue-600"
+                        className: "w-4 h-4 text-blue-600"
                       })
-                    }), /* @__PURE__ */ jsxs("div", {
-                      children: [/* @__PURE__ */ jsx("div", {
-                        className: "text-sm font-medium text-gray-900",
-                        children: custom.name
-                      }), /* @__PURE__ */ jsx("div", {
-                        className: "text-sm text-gray-500",
-                        children: custom.description
-                      }), /* @__PURE__ */ jsxs("div", {
-                        className: "text-xs text-gray-400",
-                        children: ["Based on: ", custom.layer]
-                      })]
+                    }), /* @__PURE__ */ jsx("div", {
+                      className: "min-w-0 flex-1",
+                      children: /* @__PURE__ */ jsxs("div", {
+                        className: "text-sm text-gray-600 italic",
+                        children: ['"$', custom.user_request, '"']
+                      })
                     })]
                   })
                 }), /* @__PURE__ */ jsx("td", {
-                  className: "px-6 py-4 whitespace-nowrap text-sm text-gray-900",
-                  children: custom.account
+                  className: "px-6 py-4",
+                  children: /* @__PURE__ */ jsx("div", {
+                    className: "text-sm text-gray-700",
+                    children: custom.change_description
+                  })
+                }), /* @__PURE__ */ jsxs("td", {
+                  className: "px-6 py-4 whitespace-nowrap",
+                  children: [/* @__PURE__ */ jsx("div", {
+                    className: "text-sm text-gray-900 font-medium",
+                    children: custom.website_url
+                  }), /* @__PURE__ */ jsx("div", {
+                    className: "text-xs text-gray-500",
+                    children: "Website"
+                  })]
+                }), /* @__PURE__ */ jsx("td", {
+                  className: "px-6 py-4",
+                  children: /* @__PURE__ */ jsx("div", {
+                    className: "text-sm text-gray-900 font-mono text-xs bg-gray-100 px-2 py-1 rounded",
+                    children: custom.element_targeted
+                  })
+                }), /* @__PURE__ */ jsx("td", {
+                  className: "px-6 py-4 whitespace-nowrap",
+                  children: /* @__PURE__ */ jsx("span", {
+                    className: "inline-flex px-2 py-1 text-xs font-medium rounded-md bg-purple-100 text-purple-800",
+                    children: custom.modification_type
+                  })
                 }), /* @__PURE__ */ jsx("td", {
                   className: "px-6 py-4 whitespace-nowrap",
                   children: /* @__PURE__ */ jsx("span", {
@@ -1428,51 +1999,18 @@ const customizations_default = UNSAFE_withComponentProps(function Customizations
                     children: custom.status
                   })
                 }), /* @__PURE__ */ jsx("td", {
-                  className: "px-6 py-4 whitespace-nowrap text-sm text-gray-900",
-                  children: custom.requests
-                }), /* @__PURE__ */ jsx("td", {
-                  className: "px-6 py-4 whitespace-nowrap",
-                  children: /* @__PURE__ */ jsx("div", {
-                    className: "flex items-center",
-                    children: /* @__PURE__ */ jsx("span", {
-                      className: `text-sm font-medium ${custom.performance === "-" ? "text-gray-400" : parseFloat(custom.performance) >= 98 ? "text-green-600" : parseFloat(custom.performance) >= 95 ? "text-yellow-600" : "text-red-600"}`,
-                      children: custom.performance
-                    })
-                  })
-                }), /* @__PURE__ */ jsx("td", {
                   className: "px-6 py-4 whitespace-nowrap text-sm text-gray-500",
-                  children: custom.lastUsed
-                }), /* @__PURE__ */ jsx("td", {
-                  className: "px-6 py-4 whitespace-nowrap text-right",
-                  children: /* @__PURE__ */ jsxs("div", {
-                    className: "flex items-center space-x-2",
-                    children: [/* @__PURE__ */ jsx("button", {
-                      className: "text-gray-400 hover:text-blue-600 p-1 rounded-md hover:bg-gray-100",
-                      children: /* @__PURE__ */ jsx(Eye, {
-                        className: "w-4 h-4"
-                      })
-                    }), /* @__PURE__ */ jsx("button", {
-                      className: "text-gray-400 hover:text-blue-600 p-1 rounded-md hover:bg-gray-100",
-                      children: /* @__PURE__ */ jsx(Copy, {
-                        className: "w-4 h-4"
-                      })
-                    }), /* @__PURE__ */ jsx("button", {
-                      className: "text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-100",
-                      children: /* @__PURE__ */ jsx(MoreVertical, {
-                        className: "w-4 h-4"
-                      })
-                    })]
-                  })
+                  children: formatTimeAgo(custom.applied_at)
                 })]
               }, custom.id))
             })]
           })
         })
-      }), /* @__PURE__ */ jsxs("div", {
+      }), filteredCustomizations.length > 0 && /* @__PURE__ */ jsxs("div", {
         className: "flex items-center justify-between",
-        children: [/* @__PURE__ */ jsx("div", {
+        children: [/* @__PURE__ */ jsxs("div", {
           className: "text-sm text-gray-500",
-          children: "Showing 1 to 5 of 42 customizations"
+          children: ["Showing ", filteredCustomizations.length > 0 ? 1 : 0, " to ", Math.min(filteredCustomizations.length, 50), " of ", filteredCustomizations.length, " website changes"]
         }), /* @__PURE__ */ jsxs("div", {
           className: "flex items-center space-x-2",
           children: [/* @__PURE__ */ jsx("button", {
@@ -1496,9 +2034,943 @@ const customizations_default = UNSAFE_withComponentProps(function Customizations
     })
   });
 });
-const route4 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route5 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
-  default: customizations_default
+  default: customizations
+}, Symbol.toStringTag, { value: "Module" }));
+const usage = UNSAFE_withComponentProps(function Usage() {
+  const [apiCalls, setApiCalls] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [filterAction, setFilterAction] = useState("all");
+  const [filterTimeRange, setFilterTimeRange] = useState("7d");
+  const [filterWebsite, setFilterWebsite] = useState("all");
+  const [websites2, setWebsites] = useState([]);
+  useEffect(() => {
+    fetchUsageData();
+  }, [filterAction, filterTimeRange, filterWebsite]);
+  useEffect(() => {
+    fetchWebsites();
+  }, []);
+  const fetchUsageData = async () => {
+    try {
+      const params = new URLSearchParams();
+      if (filterAction !== "all") params.set("action", filterAction);
+      if (filterTimeRange !== "all") params.set("timeRange", filterTimeRange);
+      if (filterWebsite !== "all") {
+        const selectedWebsite = websites2.find((w) => w.id === filterWebsite);
+        if (selectedWebsite) params.set("domain", selectedWebsite.url);
+      }
+      const [callsResponse, statsResponse] = await Promise.all([api.get(`usage/calls?${params}`).json(), api.get(`usage/stats?${params}`).json()]);
+      const calls = Array.isArray(callsResponse) ? callsResponse : "data" in callsResponse ? callsResponse.data : [];
+      const stats2 = "data" in statsResponse ? statsResponse.data : statsResponse;
+      setApiCalls(calls);
+      setStats(stats2);
+    } catch (error) {
+      console.error("Failed to fetch usage data:", error);
+      if (error.response && error.response.status === 401) {
+        localStorage.removeItem("auth_token");
+        localStorage.removeItem("user");
+        window.location.href = "/login";
+        return;
+      }
+      toast.error("Failed to load usage data");
+      setApiCalls([]);
+      setStats(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+  const fetchWebsites = async () => {
+    try {
+      const data = await websitesApi.list();
+      setWebsites(Array.isArray(data) ? data.map((w) => ({
+        id: w.id,
+        name: w.name,
+        url: w.url
+      })) : []);
+    } catch (error) {
+      console.error("Failed to fetch websites:", error);
+      setWebsites([]);
+    }
+  };
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    });
+  };
+  const getStatusColor = (statusCode) => {
+    if (statusCode >= 200 && statusCode < 300) return "text-green-600 bg-green-100";
+    if (statusCode >= 400 && statusCode < 500) return "text-yellow-600 bg-yellow-100";
+    if (statusCode >= 500) return "text-red-600 bg-red-100";
+    return "text-gray-600 bg-gray-100";
+  };
+  const getDeviceIcon = (deviceType) => {
+    switch (deviceType.toLowerCase()) {
+      case "mobile":
+        return /* @__PURE__ */ jsx(Smartphone, {
+          className: "w-4 h-4"
+        });
+      case "tablet":
+        return /* @__PURE__ */ jsx(Tablet, {
+          className: "w-4 h-4"
+        });
+      case "desktop":
+      default:
+        return /* @__PURE__ */ jsx(Monitor, {
+          className: "w-4 h-4"
+        });
+    }
+  };
+  const getActionColor = (action) => {
+    switch (action.toLowerCase()) {
+      case "snapshot":
+        return "text-purple-600 bg-purple-100";
+      case "customization":
+        return "text-orange-600 bg-orange-100";
+      default:
+        return "text-gray-600 bg-gray-100";
+    }
+  };
+  return /* @__PURE__ */ jsx(AuthWrapper, {
+    children: /* @__PURE__ */ jsx(DashboardLayout, {
+      children: /* @__PURE__ */ jsxs("div", {
+        className: "space-y-6",
+        children: [/* @__PURE__ */ jsx("div", {
+          className: "flex items-center justify-between",
+          children: /* @__PURE__ */ jsxs("div", {
+            children: [/* @__PURE__ */ jsx("h1", {
+              className: "text-2xl font-bold text-gray-900",
+              children: "API Usage"
+            }), /* @__PURE__ */ jsx("p", {
+              className: "mt-1 text-sm text-gray-500",
+              children: "Monitor and analyze your API usage patterns and performance"
+            })]
+          })
+        }), stats && /* @__PURE__ */ jsxs("div", {
+          className: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4",
+          children: [/* @__PURE__ */ jsxs("div", {
+            className: "bg-white p-4 rounded-lg border border-gray-200",
+            children: [/* @__PURE__ */ jsx("div", {
+              className: "text-2xl font-bold text-gray-900",
+              children: stats.total_calls.toLocaleString()
+            }), /* @__PURE__ */ jsx("div", {
+              className: "text-sm text-gray-500",
+              children: "Total Calls"
+            }), /* @__PURE__ */ jsx("div", {
+              className: "text-xs text-gray-500 mt-1",
+              children: "All time"
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: "bg-white p-4 rounded-lg border border-gray-200",
+            children: [/* @__PURE__ */ jsx("div", {
+              className: "text-2xl font-bold text-gray-900",
+              children: stats.calls_today.toLocaleString()
+            }), /* @__PURE__ */ jsx("div", {
+              className: "text-sm text-gray-500",
+              children: "Today"
+            }), /* @__PURE__ */ jsxs("div", {
+              className: "text-xs text-green-500 mt-1",
+              children: ["+", Math.round(stats.calls_today / Math.max(stats.calls_this_week - stats.calls_today, 1) * 100), "% vs yesterday"]
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: "bg-white p-4 rounded-lg border border-gray-200",
+            children: [/* @__PURE__ */ jsx("div", {
+              className: "text-2xl font-bold text-gray-900",
+              children: stats.calls_this_week.toLocaleString()
+            }), /* @__PURE__ */ jsx("div", {
+              className: "text-sm text-gray-500",
+              children: "This Week"
+            }), /* @__PURE__ */ jsx("div", {
+              className: "text-xs text-gray-500 mt-1",
+              children: "Last 7 days"
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: "bg-white p-4 rounded-lg border border-gray-200",
+            children: [/* @__PURE__ */ jsx("div", {
+              className: "text-2xl font-bold text-gray-900",
+              children: stats.calls_this_month.toLocaleString()
+            }), /* @__PURE__ */ jsx("div", {
+              className: "text-sm text-gray-500",
+              children: "This Month"
+            }), /* @__PURE__ */ jsx("div", {
+              className: "text-xs text-gray-500 mt-1",
+              children: "Last 30 days"
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: "bg-white p-4 rounded-lg border border-gray-200",
+            children: [/* @__PURE__ */ jsxs("div", {
+              className: "text-2xl font-bold text-gray-900",
+              children: [stats.avg_response_time, "ms"]
+            }), /* @__PURE__ */ jsx("div", {
+              className: "text-sm text-gray-500",
+              children: "Avg Response"
+            }), /* @__PURE__ */ jsx("div", {
+              className: "text-xs text-gray-500 mt-1",
+              children: "Performance"
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: "bg-white p-4 rounded-lg border border-gray-200",
+            children: [/* @__PURE__ */ jsxs("div", {
+              className: "text-2xl font-bold text-gray-900",
+              children: [stats.success_rate, "%"]
+            }), /* @__PURE__ */ jsx("div", {
+              className: "text-sm text-gray-500",
+              children: "Success Rate"
+            }), /* @__PURE__ */ jsx("div", {
+              className: "text-xs text-green-500 mt-1",
+              children: "2xx responses"
+            })]
+          })]
+        }), /* @__PURE__ */ jsx("div", {
+          className: "bg-white p-4 rounded-lg border border-gray-200",
+          children: /* @__PURE__ */ jsxs("div", {
+            className: "flex flex-wrap gap-4",
+            children: [/* @__PURE__ */ jsxs("div", {
+              className: "flex items-center space-x-2",
+              children: [/* @__PURE__ */ jsx(Filter, {
+                className: "w-4 h-4 text-gray-500"
+              }), /* @__PURE__ */ jsx("label", {
+                className: "text-sm font-medium text-gray-700",
+                children: "Action:"
+              }), /* @__PURE__ */ jsxs("select", {
+                value: filterAction,
+                onChange: (e) => setFilterAction(e.target.value),
+                className: "text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500",
+                children: [/* @__PURE__ */ jsx("option", {
+                  value: "all",
+                  children: "All Actions"
+                }), /* @__PURE__ */ jsx("option", {
+                  value: "snapshot",
+                  children: "Snapshot"
+                }), /* @__PURE__ */ jsx("option", {
+                  value: "customization",
+                  children: "Customization"
+                })]
+              })]
+            }), /* @__PURE__ */ jsxs("div", {
+              className: "flex items-center space-x-2",
+              children: [/* @__PURE__ */ jsx(Calendar, {
+                className: "w-4 h-4 text-gray-500"
+              }), /* @__PURE__ */ jsx("label", {
+                className: "text-sm font-medium text-gray-700",
+                children: "Time Range:"
+              }), /* @__PURE__ */ jsxs("select", {
+                value: filterTimeRange,
+                onChange: (e) => setFilterTimeRange(e.target.value),
+                className: "text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500",
+                children: [/* @__PURE__ */ jsx("option", {
+                  value: "1d",
+                  children: "Last 24 Hours"
+                }), /* @__PURE__ */ jsx("option", {
+                  value: "7d",
+                  children: "Last 7 Days"
+                }), /* @__PURE__ */ jsx("option", {
+                  value: "30d",
+                  children: "Last 30 Days"
+                }), /* @__PURE__ */ jsx("option", {
+                  value: "90d",
+                  children: "Last 90 Days"
+                }), /* @__PURE__ */ jsx("option", {
+                  value: "all",
+                  children: "All Time"
+                })]
+              })]
+            })]
+          })
+        }), /* @__PURE__ */ jsxs("div", {
+          className: "bg-white border border-gray-200 rounded-lg",
+          children: [/* @__PURE__ */ jsx("div", {
+            className: "px-6 py-4 border-b border-gray-200",
+            children: /* @__PURE__ */ jsx("h3", {
+              className: "text-lg font-medium text-gray-900",
+              children: "Recent API Calls"
+            })
+          }), loading ? /* @__PURE__ */ jsx("div", {
+            className: "p-6",
+            children: /* @__PURE__ */ jsx("div", {
+              className: "animate-pulse space-y-4",
+              children: [1, 2, 3, 4, 5].map((i) => /* @__PURE__ */ jsxs("div", {
+                className: "flex items-center space-x-4",
+                children: [/* @__PURE__ */ jsx("div", {
+                  className: "w-8 h-8 bg-gray-200 rounded-full"
+                }), /* @__PURE__ */ jsxs("div", {
+                  className: "flex-1 space-y-2",
+                  children: [/* @__PURE__ */ jsx("div", {
+                    className: "h-4 bg-gray-200 rounded w-1/3"
+                  }), /* @__PURE__ */ jsx("div", {
+                    className: "h-3 bg-gray-200 rounded w-2/3"
+                  })]
+                }), /* @__PURE__ */ jsx("div", {
+                  className: "w-20 h-8 bg-gray-200 rounded"
+                })]
+              }, i))
+            })
+          }) : apiCalls.length === 0 ? /* @__PURE__ */ jsxs("div", {
+            className: "p-8 text-center text-gray-500",
+            children: [/* @__PURE__ */ jsx(Activity, {
+              className: "w-12 h-12 mx-auto mb-4 text-gray-300"
+            }), /* @__PURE__ */ jsx("p", {
+              className: "text-lg font-medium",
+              children: "No API calls found"
+            }), /* @__PURE__ */ jsx("p", {
+              className: "text-sm mt-1",
+              children: "Try adjusting your filters or make some API calls to see data here"
+            })]
+          }) : /* @__PURE__ */ jsx("div", {
+            className: "overflow-x-auto",
+            children: /* @__PURE__ */ jsxs("table", {
+              className: "w-full",
+              children: [/* @__PURE__ */ jsx("thead", {
+                className: "bg-gray-50",
+                children: /* @__PURE__ */ jsxs("tr", {
+                  children: [/* @__PURE__ */ jsx("th", {
+                    className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
+                    children: "Action & Endpoint"
+                  }), /* @__PURE__ */ jsx("th", {
+                    className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
+                    children: "Source"
+                  }), /* @__PURE__ */ jsx("th", {
+                    className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
+                    children: "User Fingerprint"
+                  }), /* @__PURE__ */ jsx("th", {
+                    className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
+                    children: "Status"
+                  }), /* @__PURE__ */ jsx("th", {
+                    className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
+                    children: "Performance"
+                  }), /* @__PURE__ */ jsx("th", {
+                    className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
+                    children: "Timestamp"
+                  }), /* @__PURE__ */ jsx("th", {
+                    className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
+                    children: "Actions"
+                  })]
+                })
+              }), /* @__PURE__ */ jsx("tbody", {
+                className: "bg-white divide-y divide-gray-200",
+                children: apiCalls.map((call) => /* @__PURE__ */ jsxs("tr", {
+                  className: "hover:bg-gray-50",
+                  children: [/* @__PURE__ */ jsx("td", {
+                    className: "px-6 py-4",
+                    children: /* @__PURE__ */ jsxs("div", {
+                      className: "flex items-center space-x-3",
+                      children: [/* @__PURE__ */ jsx("div", {
+                        className: "flex items-center space-x-2",
+                        children: /* @__PURE__ */ jsx("span", {
+                          className: `inline-flex px-2 py-1 text-xs font-medium rounded-full ${getActionColor(call.action)}`,
+                          children: call.action
+                        })
+                      }), /* @__PURE__ */ jsxs("div", {
+                        children: [/* @__PURE__ */ jsxs("div", {
+                          className: "text-sm font-medium text-gray-900",
+                          children: [call.method, " ", call.endpoint]
+                        }), /* @__PURE__ */ jsxs("div", {
+                          className: "text-xs text-gray-500",
+                          children: ["API Key: ", call.api_key_name]
+                        })]
+                      })]
+                    })
+                  }), /* @__PURE__ */ jsx("td", {
+                    className: "px-6 py-4",
+                    children: /* @__PURE__ */ jsxs("div", {
+                      className: "text-sm text-gray-900",
+                      children: [/* @__PURE__ */ jsxs("div", {
+                        className: "flex items-center space-x-2",
+                        children: [/* @__PURE__ */ jsx(Globe, {
+                          className: "w-4 h-4 text-gray-400"
+                        }), /* @__PURE__ */ jsx("span", {
+                          children: call.domain || call.ip_address
+                        })]
+                      }), /* @__PURE__ */ jsxs("div", {
+                        className: "flex items-center space-x-2 mt-1",
+                        children: [getDeviceIcon(call.device_type), /* @__PURE__ */ jsx("span", {
+                          className: "text-xs text-gray-500",
+                          children: call.device_type
+                        })]
+                      })]
+                    })
+                  }), /* @__PURE__ */ jsx("td", {
+                    className: "px-6 py-4",
+                    children: /* @__PURE__ */ jsxs("div", {
+                      className: "text-sm text-gray-900",
+                      children: [/* @__PURE__ */ jsx("code", {
+                        className: "bg-gray-100 px-2 py-1 rounded text-xs font-mono",
+                        children: call.browser_fingerprint ? call.browser_fingerprint.substring(0, 8) : "N/A"
+                      }), call.browser_fingerprint && /* @__PURE__ */ jsxs("div", {
+                        className: "text-xs text-gray-500 mt-1",
+                        children: ["Full: ", call.browser_fingerprint]
+                      })]
+                    })
+                  }), /* @__PURE__ */ jsx("td", {
+                    className: "px-6 py-4",
+                    children: /* @__PURE__ */ jsx("span", {
+                      className: `inline-flex px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(call.status_code)}`,
+                      children: call.status_code
+                    })
+                  }), /* @__PURE__ */ jsx("td", {
+                    className: "px-6 py-4",
+                    children: /* @__PURE__ */ jsxs("div", {
+                      className: "flex items-center space-x-2",
+                      children: [/* @__PURE__ */ jsx(Clock, {
+                        className: "w-4 h-4 text-gray-400"
+                      }), /* @__PURE__ */ jsxs("span", {
+                        className: "text-sm text-gray-900",
+                        children: [call.response_time_ms, "ms"]
+                      })]
+                    })
+                  }), /* @__PURE__ */ jsx("td", {
+                    className: "px-6 py-4",
+                    children: /* @__PURE__ */ jsx("div", {
+                      className: "text-sm text-gray-900",
+                      children: formatDate(call.timestamp)
+                    })
+                  }), /* @__PURE__ */ jsx("td", {
+                    className: "px-6 py-4",
+                    children: /* @__PURE__ */ jsx("div", {
+                      className: "flex items-center space-x-2",
+                      children: /* @__PURE__ */ jsxs("span", {
+                        className: "inline-flex items-center px-2 py-1 text-xs text-gray-500 bg-gray-50 rounded-md",
+                        children: [/* @__PURE__ */ jsx(Eye, {
+                          className: "w-3 h-3 mr-1"
+                        }), "API Call"]
+                      })
+                    })
+                  })]
+                }, call.id))
+              })]
+            })
+          })]
+        })]
+      })
+    })
+  });
+});
+const route6 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  default: usage
+}, Symbol.toStringTag, { value: "Module" }));
+const docs = UNSAFE_withComponentProps(function Docs() {
+  const [copiedSnippet, setCopiedSnippet] = useState(null);
+  const copyToClipboard = async (text, snippetId) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedSnippet(snippetId);
+      setTimeout(() => setCopiedSnippet(null), 2e3);
+    } catch (err) {
+      console.error("Failed to copy text: ", err);
+    }
+  };
+  const features = [{
+    icon: Camera,
+    title: "Website Snapshots",
+    description: "Capture the complete structure and state of any website, including all HTML elements, styles, and content.",
+    details: ["Full DOM tree analysis", "CSS style extraction", "Component hierarchy mapping", "Content fingerprinting"]
+  }, {
+    icon: Palette,
+    title: "AI-Powered Customizations",
+    description: "Use natural language to describe website changes, and let our AI implement them automatically.",
+    details: ["Natural language processing", "Context-aware modifications", "Style-preserving updates", "Real-time preview"]
+  }, {
+    icon: BarChart3,
+    title: "Usage Analytics",
+    description: "Track website engagement, customization performance, and user interactions in real-time.",
+    details: ["Real-time metrics", "Custom event tracking", "Performance monitoring", "User behavior analysis"]
+  }, {
+    icon: Shield,
+    title: "Secure & Privacy-First",
+    description: "Enterprise-grade security with full data privacy and compliance standards.",
+    details: ["End-to-end encryption", "GDPR compliant", "No personal data storage", "Secure API endpoints"]
+  }];
+  const codeExamples = [{
+    id: "basic-integration",
+    title: "Basic Integration",
+    description: "Add Kuttl to any website with a single script tag",
+    language: "html",
+    code: `<!-- Add this script tag to your website -->
+<script src="https://app.kuttl.xyz/kuttl.js" 
+        data-website="YOUR_WEBSITE_KEY"><\/script>`
+  }, {
+    id: "api-snapshot",
+    title: "Take a Snapshot via API",
+    description: "Capture website state programmatically",
+    language: "javascript",
+    code: `fetch('https://api.kuttl.xyz/api/v1/snapshots', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer YOUR_API_KEY',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    url: 'https://example.com',
+    include_styles: true,
+    include_scripts: false
+  })
+})`
+  }, {
+    id: "ai-customization",
+    title: "AI Customization Request",
+    description: "Request website changes using natural language",
+    language: "javascript",
+    code: `fetch('https://api.kuttl.xyz/api/prompt', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer YOUR_API_KEY',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    prompt: "Make the header blue and increase font size by 20%",
+    website_key: "YOUR_WEBSITE_KEY",
+    apply_changes: true
+  })
+})`
+  }];
+  return /* @__PURE__ */ jsx(AuthWrapper, {
+    children: /* @__PURE__ */ jsx(DashboardLayout, {
+      children: /* @__PURE__ */ jsxs("div", {
+        className: "max-w-4xl mx-auto space-y-8",
+        children: [/* @__PURE__ */ jsxs("div", {
+          className: "text-center pb-8 border-b border-gray-200",
+          children: [/* @__PURE__ */ jsx("h1", {
+            className: "text-4xl font-bold text-gray-900 mb-4",
+            children: "How Kuttl Works"
+          }), /* @__PURE__ */ jsx("p", {
+            className: "text-xl text-gray-600 max-w-2xl mx-auto",
+            children: "Transform any website with AI-powered customizations, real-time analytics, and intelligent snapshot technology."
+          })]
+        }), /* @__PURE__ */ jsxs("section", {
+          className: "bg-gradient-to-br from-blue-50 to-indigo-100 rounded-lg p-8",
+          children: [/* @__PURE__ */ jsxs("div", {
+            className: "flex items-center space-x-3 mb-6",
+            children: [/* @__PURE__ */ jsx("div", {
+              className: "w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center",
+              children: /* @__PURE__ */ jsx(Globe, {
+                className: "w-6 h-6 text-white"
+              })
+            }), /* @__PURE__ */ jsx("h2", {
+              className: "text-2xl font-bold text-gray-900",
+              children: "What is Kuttl?"
+            })]
+          }), /* @__PURE__ */ jsxs("div", {
+            className: "grid md:grid-cols-2 gap-8 items-center",
+            children: [/* @__PURE__ */ jsxs("div", {
+              children: [/* @__PURE__ */ jsx("p", {
+                className: "text-gray-700 mb-4",
+                children: "Kuttl is an intelligent website management platform that combines AI-powered customization with advanced analytics. It allows you to:"
+              }), /* @__PURE__ */ jsxs("ul", {
+                className: "space-y-3 text-gray-700",
+                children: [/* @__PURE__ */ jsxs("li", {
+                  className: "flex items-center space-x-3",
+                  children: [/* @__PURE__ */ jsx(CheckCircle, {
+                    className: "w-5 h-5 text-green-600 flex-shrink-0"
+                  }), /* @__PURE__ */ jsx("span", {
+                    children: "Capture complete website snapshots"
+                  })]
+                }), /* @__PURE__ */ jsxs("li", {
+                  className: "flex items-center space-x-3",
+                  children: [/* @__PURE__ */ jsx(CheckCircle, {
+                    className: "w-5 h-5 text-green-600 flex-shrink-0"
+                  }), /* @__PURE__ */ jsx("span", {
+                    children: "Modify websites using natural language"
+                  })]
+                }), /* @__PURE__ */ jsxs("li", {
+                  className: "flex items-center space-x-3",
+                  children: [/* @__PURE__ */ jsx(CheckCircle, {
+                    className: "w-5 h-5 text-green-600 flex-shrink-0"
+                  }), /* @__PURE__ */ jsx("span", {
+                    children: "Track user interactions and performance"
+                  })]
+                }), /* @__PURE__ */ jsxs("li", {
+                  className: "flex items-center space-x-3",
+                  children: [/* @__PURE__ */ jsx(CheckCircle, {
+                    className: "w-5 h-5 text-green-600 flex-shrink-0"
+                  }), /* @__PURE__ */ jsx("span", {
+                    children: "Deploy changes instantly across your sites"
+                  })]
+                })]
+              })]
+            }), /* @__PURE__ */ jsx("div", {
+              className: "text-center",
+              children: /* @__PURE__ */ jsxs("div", {
+                className: "bg-white rounded-lg p-6 shadow-lg",
+                children: [/* @__PURE__ */ jsx("div", {
+                  className: "text-3xl font-bold text-blue-600 mb-2",
+                  children: "3-Step Process"
+                }), /* @__PURE__ */ jsxs("div", {
+                  className: "space-y-4 text-sm",
+                  children: [/* @__PURE__ */ jsxs("div", {
+                    className: "flex items-center space-x-3",
+                    children: [/* @__PURE__ */ jsx("div", {
+                      className: "w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-semibold text-xs",
+                      children: "1"
+                    }), /* @__PURE__ */ jsx("span", {
+                      children: "Capture website snapshot"
+                    })]
+                  }), /* @__PURE__ */ jsxs("div", {
+                    className: "flex items-center space-x-3",
+                    children: [/* @__PURE__ */ jsx("div", {
+                      className: "w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-semibold text-xs",
+                      children: "2"
+                    }), /* @__PURE__ */ jsx("span", {
+                      children: "Request AI customizations"
+                    })]
+                  }), /* @__PURE__ */ jsxs("div", {
+                    className: "flex items-center space-x-3",
+                    children: [/* @__PURE__ */ jsx("div", {
+                      className: "w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-semibold text-xs",
+                      children: "3"
+                    }), /* @__PURE__ */ jsx("span", {
+                      children: "Deploy and track changes"
+                    })]
+                  })]
+                })]
+              })
+            })]
+          })]
+        }), /* @__PURE__ */ jsxs("section", {
+          children: [/* @__PURE__ */ jsx("h2", {
+            className: "text-2xl font-bold text-gray-900 mb-6",
+            children: "Core Features"
+          }), /* @__PURE__ */ jsx("div", {
+            className: "grid md:grid-cols-2 gap-6",
+            children: features.map((feature) => /* @__PURE__ */ jsxs("div", {
+              className: "bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow",
+              children: [/* @__PURE__ */ jsxs("div", {
+                className: "flex items-center space-x-3 mb-4",
+                children: [/* @__PURE__ */ jsx("div", {
+                  className: "w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center",
+                  children: /* @__PURE__ */ jsx(feature.icon, {
+                    className: "w-6 h-6 text-blue-600"
+                  })
+                }), /* @__PURE__ */ jsx("h3", {
+                  className: "text-lg font-semibold text-gray-900",
+                  children: feature.title
+                })]
+              }), /* @__PURE__ */ jsx("p", {
+                className: "text-gray-600 mb-4",
+                children: feature.description
+              }), /* @__PURE__ */ jsx("ul", {
+                className: "space-y-2",
+                children: feature.details.map((detail) => /* @__PURE__ */ jsxs("li", {
+                  className: "flex items-center space-x-2 text-sm text-gray-500",
+                  children: [/* @__PURE__ */ jsx(ArrowRight, {
+                    className: "w-4 h-4 text-gray-400"
+                  }), /* @__PURE__ */ jsx("span", {
+                    children: detail
+                  })]
+                }, detail))
+              })]
+            }, feature.title))
+          })]
+        }), /* @__PURE__ */ jsxs("section", {
+          children: [/* @__PURE__ */ jsx("h2", {
+            className: "text-2xl font-bold text-gray-900 mb-6",
+            children: "Quick Start Guide"
+          }), /* @__PURE__ */ jsx("div", {
+            className: "bg-white border border-gray-200 rounded-lg overflow-hidden",
+            children: /* @__PURE__ */ jsxs("div", {
+              className: "p-6 border-b border-gray-200",
+              children: [/* @__PURE__ */ jsx("h3", {
+                className: "text-lg font-semibold text-gray-900 mb-4",
+                children: "Getting Started in 3 Steps"
+              }), /* @__PURE__ */ jsxs("div", {
+                className: "space-y-6",
+                children: [/* @__PURE__ */ jsxs("div", {
+                  className: "flex space-x-4",
+                  children: [/* @__PURE__ */ jsx("div", {
+                    className: "flex-shrink-0",
+                    children: /* @__PURE__ */ jsx("div", {
+                      className: "w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-semibold",
+                      children: "1"
+                    })
+                  }), /* @__PURE__ */ jsxs("div", {
+                    className: "flex-1",
+                    children: [/* @__PURE__ */ jsx("h4", {
+                      className: "font-medium text-gray-900 mb-2",
+                      children: "Add a Website"
+                    }), /* @__PURE__ */ jsxs("p", {
+                      className: "text-gray-600 mb-3",
+                      children: ["Go to the ", /* @__PURE__ */ jsx("a", {
+                        href: "/websites",
+                        className: "text-blue-600 hover:text-blue-800",
+                        children: "Websites"
+                      }), " section and add your website URL to get a unique tracking key."]
+                    })]
+                  })]
+                }), /* @__PURE__ */ jsxs("div", {
+                  className: "flex space-x-4",
+                  children: [/* @__PURE__ */ jsx("div", {
+                    className: "flex-shrink-0",
+                    children: /* @__PURE__ */ jsx("div", {
+                      className: "w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-semibold",
+                      children: "2"
+                    })
+                  }), /* @__PURE__ */ jsxs("div", {
+                    className: "flex-1",
+                    children: [/* @__PURE__ */ jsx("h4", {
+                      className: "font-medium text-gray-900 mb-2",
+                      children: "Install Tracking Script"
+                    }), /* @__PURE__ */ jsx("p", {
+                      className: "text-gray-600 mb-3",
+                      children: "Add the Kuttl script to your website using your unique website key:"
+                    }), /* @__PURE__ */ jsx("div", {
+                      className: "bg-gray-50 rounded-md p-3 text-sm font-mono",
+                      children: /* @__PURE__ */ jsx("code", {
+                        children: '<script src="https://app.kuttl.xyz/kuttl.js" data-website="YOUR_WEBSITE_KEY"><\/script>'
+                      })
+                    })]
+                  })]
+                }), /* @__PURE__ */ jsxs("div", {
+                  className: "flex space-x-4",
+                  children: [/* @__PURE__ */ jsx("div", {
+                    className: "flex-shrink-0",
+                    children: /* @__PURE__ */ jsx("div", {
+                      className: "w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-semibold",
+                      children: "3"
+                    })
+                  }), /* @__PURE__ */ jsxs("div", {
+                    className: "flex-1",
+                    children: [/* @__PURE__ */ jsx("h4", {
+                      className: "font-medium text-gray-900 mb-2",
+                      children: "Start Customizing"
+                    }), /* @__PURE__ */ jsxs("p", {
+                      className: "text-gray-600 mb-3",
+                      children: ["Use the ", /* @__PURE__ */ jsx("a", {
+                        href: "/customizations",
+                        className: "text-blue-600 hover:text-blue-800",
+                        children: "Customizations"
+                      }), " panel to make AI-powered changes to your website using natural language."]
+                    })]
+                  })]
+                })]
+              })]
+            })
+          })]
+        }), /* @__PURE__ */ jsxs("section", {
+          children: [/* @__PURE__ */ jsx("h2", {
+            className: "text-2xl font-bold text-gray-900 mb-6",
+            children: "Code Examples"
+          }), /* @__PURE__ */ jsx("div", {
+            className: "space-y-6",
+            children: codeExamples.map((example) => /* @__PURE__ */ jsxs("div", {
+              className: "bg-white border border-gray-200 rounded-lg overflow-hidden",
+              children: [/* @__PURE__ */ jsx("div", {
+                className: "px-6 py-4 border-b border-gray-200 bg-gray-50",
+                children: /* @__PURE__ */ jsxs("div", {
+                  className: "flex items-center justify-between",
+                  children: [/* @__PURE__ */ jsxs("div", {
+                    children: [/* @__PURE__ */ jsx("h3", {
+                      className: "text-lg font-medium text-gray-900",
+                      children: example.title
+                    }), /* @__PURE__ */ jsx("p", {
+                      className: "text-sm text-gray-600 mt-1",
+                      children: example.description
+                    })]
+                  }), /* @__PURE__ */ jsxs("button", {
+                    onClick: () => copyToClipboard(example.code, example.id),
+                    className: "flex items-center space-x-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 transition-colors",
+                    children: [copiedSnippet === example.id ? /* @__PURE__ */ jsx(CheckCircle, {
+                      className: "w-4 h-4"
+                    }) : /* @__PURE__ */ jsx(Copy, {
+                      className: "w-4 h-4"
+                    }), /* @__PURE__ */ jsx("span", {
+                      className: "text-sm",
+                      children: copiedSnippet === example.id ? "Copied!" : "Copy"
+                    })]
+                  })]
+                })
+              }), /* @__PURE__ */ jsx("div", {
+                className: "p-6",
+                children: /* @__PURE__ */ jsx("pre", {
+                  className: "bg-gray-900 text-gray-100 p-4 rounded-md overflow-x-auto text-sm",
+                  children: /* @__PURE__ */ jsx("code", {
+                    children: example.code
+                  })
+                })
+              })]
+            }, example.id))
+          })]
+        }), /* @__PURE__ */ jsx("section", {
+          children: /* @__PURE__ */ jsxs("div", {
+            className: "bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-8",
+            children: [/* @__PURE__ */ jsxs("div", {
+              className: "flex items-center space-x-3 mb-6",
+              children: [/* @__PURE__ */ jsx("div", {
+                className: "w-10 h-10 bg-gray-800 rounded-lg flex items-center justify-center",
+                children: /* @__PURE__ */ jsx(Code, {
+                  className: "w-6 h-6 text-white"
+                })
+              }), /* @__PURE__ */ jsx("h2", {
+                className: "text-2xl font-bold text-gray-900",
+                children: "API Reference"
+              })]
+            }), /* @__PURE__ */ jsxs("div", {
+              className: "grid md:grid-cols-2 gap-6",
+              children: [/* @__PURE__ */ jsxs("div", {
+                className: "space-y-4",
+                children: [/* @__PURE__ */ jsx("h3", {
+                  className: "font-semibold text-gray-900",
+                  children: "Available Endpoints"
+                }), /* @__PURE__ */ jsxs("div", {
+                  className: "space-y-3 text-sm",
+                  children: [/* @__PURE__ */ jsxs("div", {
+                    className: "flex items-center space-x-3",
+                    children: [/* @__PURE__ */ jsx("span", {
+                      className: "px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-mono",
+                      children: "GET"
+                    }), /* @__PURE__ */ jsx("span", {
+                      className: "font-mono",
+                      children: "/api/v1/websites"
+                    })]
+                  }), /* @__PURE__ */ jsxs("div", {
+                    className: "flex items-center space-x-3",
+                    children: [/* @__PURE__ */ jsx("span", {
+                      className: "px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-mono",
+                      children: "POST"
+                    }), /* @__PURE__ */ jsx("span", {
+                      className: "font-mono",
+                      children: "/api/v1/snapshots"
+                    })]
+                  }), /* @__PURE__ */ jsxs("div", {
+                    className: "flex items-center space-x-3",
+                    children: [/* @__PURE__ */ jsx("span", {
+                      className: "px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs font-mono",
+                      children: "POST"
+                    }), /* @__PURE__ */ jsx("span", {
+                      className: "font-mono",
+                      children: "/api/prompt"
+                    })]
+                  }), /* @__PURE__ */ jsxs("div", {
+                    className: "flex items-center space-x-3",
+                    children: [/* @__PURE__ */ jsx("span", {
+                      className: "px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs font-mono",
+                      children: "GET"
+                    }), /* @__PURE__ */ jsx("span", {
+                      className: "font-mono",
+                      children: "/api/v1/usage/stats"
+                    })]
+                  })]
+                })]
+              }), /* @__PURE__ */ jsxs("div", {
+                className: "space-y-4",
+                children: [/* @__PURE__ */ jsx("h3", {
+                  className: "font-semibold text-gray-900",
+                  children: "Authentication"
+                }), /* @__PURE__ */ jsxs("p", {
+                  className: "text-sm text-gray-600",
+                  children: ["All API requests require authentication using API keys. Get your API key from the", " ", /* @__PURE__ */ jsx("a", {
+                    href: "/api-keys",
+                    className: "text-blue-600 hover:text-blue-800",
+                    children: "API Keys"
+                  }), " section."]
+                }), /* @__PURE__ */ jsx("div", {
+                  className: "bg-yellow-50 border border-yellow-200 rounded-md p-3",
+                  children: /* @__PURE__ */ jsxs("div", {
+                    className: "flex items-start space-x-2",
+                    children: [/* @__PURE__ */ jsx(Key, {
+                      className: "w-4 h-4 text-yellow-600 mt-0.5"
+                    }), /* @__PURE__ */ jsxs("div", {
+                      className: "text-sm text-yellow-800",
+                      children: [/* @__PURE__ */ jsx("strong", {
+                        children: "Security:"
+                      }), " Never expose your API keys in client-side code. Use them only in secure server environments."]
+                    })]
+                  })
+                })]
+              })]
+            })]
+          })
+        }), /* @__PURE__ */ jsxs("section", {
+          children: [/* @__PURE__ */ jsx("h2", {
+            className: "text-2xl font-bold text-gray-900 mb-6",
+            children: "Common Use Cases"
+          }), /* @__PURE__ */ jsxs("div", {
+            className: "grid md:grid-cols-3 gap-6",
+            children: [/* @__PURE__ */ jsxs("div", {
+              className: "bg-white border border-gray-200 rounded-lg p-6",
+              children: [/* @__PURE__ */ jsx("div", {
+                className: "w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mb-4",
+                children: /* @__PURE__ */ jsx(Zap, {
+                  className: "w-6 h-6 text-green-600"
+                })
+              }), /* @__PURE__ */ jsx("h3", {
+                className: "font-semibold text-gray-900 mb-3",
+                children: "A/B Testing"
+              }), /* @__PURE__ */ jsx("p", {
+                className: "text-gray-600 text-sm",
+                children: "Create and deploy multiple website variations to test user engagement and conversion rates."
+              })]
+            }), /* @__PURE__ */ jsxs("div", {
+              className: "bg-white border border-gray-200 rounded-lg p-6",
+              children: [/* @__PURE__ */ jsx("div", {
+                className: "w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mb-4",
+                children: /* @__PURE__ */ jsx(Palette, {
+                  className: "w-6 h-6 text-purple-600"
+                })
+              }), /* @__PURE__ */ jsx("h3", {
+                className: "font-semibold text-gray-900 mb-3",
+                children: "Brand Updates"
+              }), /* @__PURE__ */ jsx("p", {
+                className: "text-gray-600 text-sm",
+                children: "Instantly update brand colors, fonts, and styling across all your websites with AI assistance."
+              })]
+            }), /* @__PURE__ */ jsxs("div", {
+              className: "bg-white border border-gray-200 rounded-lg p-6",
+              children: [/* @__PURE__ */ jsx("div", {
+                className: "w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4",
+                children: /* @__PURE__ */ jsx(BarChart3, {
+                  className: "w-6 h-6 text-blue-600"
+                })
+              }), /* @__PURE__ */ jsx("h3", {
+                className: "font-semibold text-gray-900 mb-3",
+                children: "Performance Monitoring"
+              }), /* @__PURE__ */ jsx("p", {
+                className: "text-gray-600 text-sm",
+                children: "Track website performance, user interactions, and optimization opportunities in real-time."
+              })]
+            })]
+          })]
+        }), /* @__PURE__ */ jsxs("section", {
+          className: "bg-blue-50 rounded-lg p-8 text-center",
+          children: [/* @__PURE__ */ jsx("h2", {
+            className: "text-2xl font-bold text-gray-900 mb-4",
+            children: "Need Help?"
+          }), /* @__PURE__ */ jsx("p", {
+            className: "text-gray-600 mb-6 max-w-2xl mx-auto",
+            children: "Our documentation covers the most common use cases, but if you need additional support or have specific questions about integrating Kuttl with your workflow, we're here to help."
+          }), /* @__PURE__ */ jsxs("div", {
+            className: "flex flex-col sm:flex-row gap-4 justify-center",
+            children: [/* @__PURE__ */ jsxs("a", {
+              href: "mailto:support@kuttl.xyz",
+              className: "inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors",
+              children: [/* @__PURE__ */ jsx("span", {
+                children: "Contact Support"
+              }), /* @__PURE__ */ jsx(ExternalLink, {
+                className: "ml-2 w-4 h-4"
+              })]
+            }), /* @__PURE__ */ jsxs("a", {
+              href: "/api-keys",
+              className: "inline-flex items-center px-6 py-3 bg-white text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50 transition-colors",
+              children: [/* @__PURE__ */ jsx("span", {
+                children: "Get API Keys"
+              }), /* @__PURE__ */ jsx(ArrowRight, {
+                className: "ml-2 w-4 h-4"
+              })]
+            })]
+          })]
+        })]
+      })
+    })
+  });
+});
+const route7 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  default: docs
 }, Symbol.toStringTag, { value: "Module" }));
 const usageData = [{
   name: "Mon",
@@ -1893,7 +3365,7 @@ const apiUsage = UNSAFE_withComponentProps(function APIUsage() {
     })
   });
 });
-const route5 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route8 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: apiUsage
 }, Symbol.toStringTag, { value: "Module" }));
@@ -1903,6 +3375,8 @@ const apiKeys = UNSAFE_withComponentProps(function APIKeys() {
   const [creating, setCreating] = useState(false);
   const [newToken, setNewToken] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showDisableModal, setShowDisableModal] = useState(false);
+  const [tokenToDisable, setTokenToDisable] = useState(null);
   const [formData, setFormData] = useState({
     name: "",
     expires_at: ""
@@ -1940,6 +3414,15 @@ const apiKeys = UNSAFE_withComponentProps(function APIKeys() {
       toast.error("Token name is required");
       return;
     }
+    if (formData.expires_at) {
+      const expiryDate = new Date(formData.expires_at);
+      const today = /* @__PURE__ */ new Date();
+      today.setHours(0, 0, 0, 0);
+      if (expiryDate <= today) {
+        toast.error("Expiration date must be in the future");
+        return;
+      }
+    }
     setCreating(true);
     try {
       const tokenData = {
@@ -1966,17 +3449,25 @@ const apiKeys = UNSAFE_withComponentProps(function APIKeys() {
       setCreating(false);
     }
   };
-  const handleRevoke = async (tokenId, tokenName) => {
-    if (!confirm(`Are you sure you want to revoke the "${tokenName}" API token? This cannot be undone.`)) {
-      return;
-    }
+  const handleDisableClick = (tokenId, tokenName) => {
+    setTokenToDisable({
+      id: tokenId,
+      name: tokenName
+    });
+    setShowDisableModal(true);
+  };
+  const handleDisableConfirm = async () => {
+    if (!tokenToDisable) return;
     try {
-      await apiKeysApi.revoke(tokenId);
-      toast.success("API token revoked successfully");
+      await apiKeysApi.revoke(tokenToDisable.id);
+      toast.success("API token disabled successfully");
       await fetchTokens();
     } catch (error) {
-      console.error("Failed to revoke API token:", error);
-      toast.error(error.message || "Failed to revoke API token");
+      console.error("Failed to disable API token:", error);
+      toast.error(error.message || "Failed to disable API token");
+    } finally {
+      setShowDisableModal(false);
+      setTokenToDisable(null);
     }
   };
   const copyToClipboard = (text, label) => {
@@ -2016,7 +3507,7 @@ const apiKeys = UNSAFE_withComponentProps(function APIKeys() {
             })]
           }), /* @__PURE__ */ jsxs("button", {
             onClick: () => setShowCreateModal(true),
-            className: "inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500",
+            className: "inline-flex items-center px-4 py-3 border border-transparent rounded-lg  text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500",
             children: [/* @__PURE__ */ jsx(Plus, {
               className: "w-4 h-4 mr-2"
             }), "Create New Token"]
@@ -2167,7 +3658,7 @@ const apiKeys = UNSAFE_withComponentProps(function APIKeys() {
                         children: [/* @__PURE__ */ jsx("strong", {
                           children: "Last used:"
                         }), " ", formatDate(token.last_used)]
-                      }), token.expires_at && /* @__PURE__ */ jsxs("span", {
+                      }), token.expires_at && token.is_active && /* @__PURE__ */ jsxs("span", {
                         className: isExpired(token.expires_at) ? "text-red-600" : "",
                         children: [/* @__PURE__ */ jsx("strong", {
                           children: "Expires:"
@@ -2180,13 +3671,13 @@ const apiKeys = UNSAFE_withComponentProps(function APIKeys() {
                   children: [/* @__PURE__ */ jsx("span", {
                     className: `inline-flex px-2 py-1 text-xs font-medium rounded-full ${token.is_active && !isExpired(token.expires_at) ? " text-green-700" : " text-red-700"}`,
                     children: token.is_active && !isExpired(token.expires_at) ? "Active" : "Inactive"
-                  }), /* @__PURE__ */ jsx("button", {
-                    onClick: () => handleRevoke(token.id, token.name),
-                    className: "p-2 text-red-600 hover:text-red-800 hover:bg-red-100 rounded",
-                    title: "Revoke token",
-                    children: /* @__PURE__ */ jsx(Trash2, {
-                      className: "w-4 h-4"
-                    })
+                  }), token.is_active && !isExpired(token.expires_at) && /* @__PURE__ */ jsxs("button", {
+                    onClick: () => handleDisableClick(token.id, token.name),
+                    className: "inline-flex items-center px-3 py-3 text-sm font-medium text-xs text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors",
+                    title: "Disable token",
+                    children: [/* @__PURE__ */ jsx(Shield, {
+                      className: "w-4 h-4 mr-1"
+                    }), "Disable"]
                   })]
                 })]
               })
@@ -2234,7 +3725,7 @@ const apiKeys = UNSAFE_withComponentProps(function APIKeys() {
         }), /* @__PURE__ */ jsx("div", {
           className: "relative w-full max-w-lg",
           children: /* @__PURE__ */ jsx("div", {
-            className: "relative bg-white rounded-2xl shadow-2xl",
+            className: "relative bg-white rounded-2xl -2xl",
             children: !newToken ? (
               // Create Token Form
               /* @__PURE__ */ jsxs("div", {
@@ -2285,7 +3776,7 @@ const apiKeys = UNSAFE_withComponentProps(function APIKeys() {
                       htmlFor: "modal-name",
                       className: "block text-sm font-medium text-gray-700 mb-2",
                       children: "Token Name *"
-                    }), /* @__PURE__ */ jsx("input", {
+                    }), /* @__PURE__ */ jsx(Input, {
                       type: "text",
                       id: "modal-name",
                       value: formData.name,
@@ -2294,26 +3785,25 @@ const apiKeys = UNSAFE_withComponentProps(function APIKeys() {
                         name: e.target.value
                       }),
                       placeholder: "e.g., My Website Integration",
-                      required: true,
-                      className: "block w-full rounded-lg border-gray-300 border px-3 py-3 text-sm placeholder-gray-400 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
+                      required: true
                     })]
                   }), /* @__PURE__ */ jsxs("div", {
                     children: [/* @__PURE__ */ jsx("label", {
                       htmlFor: "modal-expires",
                       className: "block text-sm font-medium text-gray-700 mb-2",
                       children: "Expiration Date (optional)"
-                    }), /* @__PURE__ */ jsx("input", {
+                    }), /* @__PURE__ */ jsx(Input, {
                       type: "date",
                       id: "modal-expires",
                       value: formData.expires_at,
+                      min: new Date((/* @__PURE__ */ new Date()).getTime() + 24 * 60 * 60 * 1e3).toISOString().split("T")[0],
                       onChange: (e) => setFormData({
                         ...formData,
                         expires_at: e.target.value
-                      }),
-                      className: "block w-full rounded-lg border-gray-300 border px-3 py-3 text-sm placeholder-gray-400 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
+                      })
                     }), /* @__PURE__ */ jsx("p", {
                       className: "mt-1 text-xs text-gray-500",
-                      children: "Leave empty for tokens that never expire"
+                      children: "Leave empty for tokens that never expire. Must be at least tomorrow."
                     })]
                   }), /* @__PURE__ */ jsxs("div", {
                     className: "flex gap-3 pt-4",
@@ -2326,12 +3816,12 @@ const apiKeys = UNSAFE_withComponentProps(function APIKeys() {
                           expires_at: ""
                         });
                       },
-                      className: "flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors",
+                      className: "flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors",
                       children: "Cancel"
                     }), /* @__PURE__ */ jsx("button", {
                       type: "submit",
                       disabled: creating,
-                      className: "flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors",
+                      className: "flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors",
                       children: creating ? "Creating..." : "Create Token"
                     })]
                   })]
@@ -2368,7 +3858,7 @@ const apiKeys = UNSAFE_withComponentProps(function APIKeys() {
                   className: "text-center mb-8",
                   children: [/* @__PURE__ */ jsx("h3", {
                     className: "text-2xl font-bold text-gray-900 mb-2",
-                    children: "Generate Secret Key"
+                    children: "API key created successfully"
                   }), /* @__PURE__ */ jsx("p", {
                     className: "text-gray-600",
                     children: "For security, this key will only be shown once. Please store it in a safe place."
@@ -2402,7 +3892,7 @@ const apiKeys = UNSAFE_withComponentProps(function APIKeys() {
                       })]
                     }), /* @__PURE__ */ jsx("button", {
                       onClick: () => copyToClipboard(newToken.token, "API token"),
-                      className: "px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg border transition-colors",
+                      className: "px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg border transition-colors",
                       children: "Copy"
                     })]
                   }), /* @__PURE__ */ jsx("button", {
@@ -2414,7 +3904,7 @@ const apiKeys = UNSAFE_withComponentProps(function APIKeys() {
                         expires_at: ""
                       });
                     },
-                    className: "w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors",
+                    className: "w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors",
                     children: "Done"
                   })]
                 })]
@@ -2422,13 +3912,498 @@ const apiKeys = UNSAFE_withComponentProps(function APIKeys() {
             )
           })
         })]
+      }), document.body), showDisableModal && tokenToDisable && typeof window !== "undefined" && createPortal(/* @__PURE__ */ jsxs("div", {
+        className: "fixed inset-0 z-[9999] flex items-center justify-center p-4",
+        children: [/* @__PURE__ */ jsx("div", {
+          className: "absolute inset-0 bg-gray-900/50 backdrop-blur-sm",
+          onClick: () => {
+            setShowDisableModal(false);
+            setTokenToDisable(null);
+          }
+        }), /* @__PURE__ */ jsx("div", {
+          className: "relative w-full max-w-md",
+          children: /* @__PURE__ */ jsxs("div", {
+            className: "relative bg-white rounded-2xl -2xl p-6",
+            children: [/* @__PURE__ */ jsxs("div", {
+              className: "flex items-center space-x-4 mb-6",
+              children: [/* @__PURE__ */ jsx("div", {
+                className: "w-12 h-12 bg-red-100 rounded-full flex items-center justify-center",
+                children: /* @__PURE__ */ jsx(Shield, {
+                  className: "h-6 w-6 text-red-600"
+                })
+              }), /* @__PURE__ */ jsxs("div", {
+                children: [/* @__PURE__ */ jsx("h3", {
+                  className: "text-xl font-semibold text-gray-900",
+                  children: "Disable API Token"
+                }), /* @__PURE__ */ jsx("p", {
+                  className: "text-sm text-gray-500",
+                  children: "This action cannot be undone"
+                })]
+              })]
+            }), /* @__PURE__ */ jsxs("div", {
+              className: "mb-6",
+              children: [/* @__PURE__ */ jsxs("p", {
+                className: "text-gray-700",
+                children: ["Are you sure you want to disable the API token", " ", /* @__PURE__ */ jsxs("span", {
+                  className: "font-semibold",
+                  children: ['"', tokenToDisable.name, '"']
+                }), "?"]
+              }), /* @__PURE__ */ jsx("p", {
+                className: "text-sm text-gray-500 mt-2",
+                children: "Any applications using this token will immediately lose access to the API."
+              })]
+            }), /* @__PURE__ */ jsxs("div", {
+              className: "flex gap-3",
+              children: [/* @__PURE__ */ jsx("button", {
+                type: "button",
+                onClick: () => {
+                  setShowDisableModal(false);
+                  setTokenToDisable(null);
+                },
+                className: "flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors",
+                children: "Cancel"
+              }), /* @__PURE__ */ jsx("button", {
+                type: "button",
+                onClick: handleDisableConfirm,
+                className: "flex-1 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors",
+                children: "Disable Token"
+              })]
+            })]
+          })
+        })]
       }), document.body)]
     })
   });
 });
-const route6 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route9 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: apiKeys
+}, Symbol.toStringTag, { value: "Module" }));
+const profile = UNSAFE_withComponentProps(function Profile() {
+  const [profile2, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [profileFormData, setProfileFormData] = useState({
+    name: "",
+    email: ""
+  });
+  const [passwordFormData, setPasswordFormData] = useState({
+    current_password: "",
+    new_password: "",
+    confirm_password: ""
+  });
+  const [profileUpdating, setProfileUpdating] = useState(false);
+  const [passwordChanging, setPasswordChanging] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [activeTab, setActiveTab] = useState("profile");
+  useEffect(() => {
+    fetchProfile();
+  }, []);
+  const fetchProfile = async () => {
+    try {
+      const response = await api.get("auth/profile").json();
+      const profileData = response.data || response;
+      setProfile(profileData);
+      setProfileFormData({
+        name: profileData.name,
+        email: profileData.email
+      });
+    } catch (error) {
+      console.error("Failed to fetch profile:", error);
+      if (error.response && error.response.status === 401) {
+        localStorage.removeItem("auth_token");
+        localStorage.removeItem("user");
+        window.location.href = "/login";
+        return;
+      }
+      toast.error("Failed to load profile data");
+    } finally {
+      setLoading(false);
+    }
+  };
+  const handleProfileUpdate = async (e) => {
+    e.preventDefault();
+    if (!profileFormData.name.trim() || !profileFormData.email.trim()) {
+      toast.error("Name and email are required");
+      return;
+    }
+    setProfileUpdating(true);
+    try {
+      const response = await api.put("auth/profile", {
+        json: profileFormData
+      }).json();
+      const result = response.data || response;
+      setProfile(result.user);
+      localStorage.setItem("user", JSON.stringify(result.user));
+      toast.success("Profile updated successfully");
+    } catch (error) {
+      console.error("Failed to update profile:", error);
+      if (error.response) {
+        const errorData = await error.response.json().catch(() => ({}));
+        toast.error(errorData.message || "Failed to update profile");
+      } else {
+        toast.error("Failed to update profile");
+      }
+    } finally {
+      setProfileUpdating(false);
+    }
+  };
+  const handlePasswordChange = async (e) => {
+    e.preventDefault();
+    if (!passwordFormData.current_password || !passwordFormData.new_password) {
+      toast.error("Current password and new password are required");
+      return;
+    }
+    if (passwordFormData.new_password.length < 8) {
+      toast.error("New password must be at least 8 characters long");
+      return;
+    }
+    if (passwordFormData.new_password !== passwordFormData.confirm_password) {
+      toast.error("New passwords do not match");
+      return;
+    }
+    setPasswordChanging(true);
+    try {
+      await api.post("auth/change-password", {
+        json: {
+          current_password: passwordFormData.current_password,
+          new_password: passwordFormData.new_password
+        }
+      }).json();
+      toast.success("Password changed successfully");
+      setPasswordFormData({
+        current_password: "",
+        new_password: "",
+        confirm_password: ""
+      });
+    } catch (error) {
+      console.error("Failed to change password:", error);
+      if (error.response) {
+        const errorData = await error.response.json().catch(() => ({}));
+        toast.error(errorData.message || "Failed to change password");
+      } else {
+        toast.error("Failed to change password");
+      }
+    } finally {
+      setPasswordChanging(false);
+    }
+  };
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  };
+  if (loading) {
+    return /* @__PURE__ */ jsx(AuthWrapper, {
+      children: /* @__PURE__ */ jsx(DashboardLayout, {
+        children: /* @__PURE__ */ jsx("div", {
+          className: "space-y-6",
+          children: /* @__PURE__ */ jsxs("div", {
+            className: "animate-pulse",
+            children: [/* @__PURE__ */ jsx("div", {
+              className: "h-8 bg-gray-200 rounded w-1/4 mb-4"
+            }), /* @__PURE__ */ jsxs("div", {
+              className: "bg-white p-6 rounded-lg border",
+              children: [/* @__PURE__ */ jsx("div", {
+                className: "h-6 bg-gray-200 rounded w-1/3 mb-4"
+              }), /* @__PURE__ */ jsxs("div", {
+                className: "space-y-4",
+                children: [/* @__PURE__ */ jsx("div", {
+                  className: "h-4 bg-gray-200 rounded w-full"
+                }), /* @__PURE__ */ jsx("div", {
+                  className: "h-4 bg-gray-200 rounded w-2/3"
+                }), /* @__PURE__ */ jsx("div", {
+                  className: "h-4 bg-gray-200 rounded w-1/2"
+                })]
+              })]
+            })]
+          })
+        })
+      })
+    });
+  }
+  return /* @__PURE__ */ jsx(AuthWrapper, {
+    children: /* @__PURE__ */ jsx(DashboardLayout, {
+      children: /* @__PURE__ */ jsxs("div", {
+        className: "space-y-6",
+        children: [/* @__PURE__ */ jsx("div", {
+          className: "flex items-center justify-between",
+          children: /* @__PURE__ */ jsxs("div", {
+            children: [/* @__PURE__ */ jsx("h1", {
+              className: "text-2xl font-bold text-gray-900",
+              children: "Profile"
+            }), /* @__PURE__ */ jsx("p", {
+              className: "mt-1 text-sm text-gray-500",
+              children: "Manage your account settings and preferences"
+            })]
+          })
+        }), /* @__PURE__ */ jsx("div", {
+          className: "bg-white rounded-lg border border-gray-200 p-6",
+          children: /* @__PURE__ */ jsxs("div", {
+            className: "flex items-center space-x-4",
+            children: [/* @__PURE__ */ jsx("div", {
+              className: "w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center text-white text-xl font-bold",
+              children: profile2?.name ? profile2.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) : "U"
+            }), /* @__PURE__ */ jsxs("div", {
+              className: "flex-1",
+              children: [/* @__PURE__ */ jsx("h2", {
+                className: "text-xl font-semibold text-gray-900",
+                children: profile2?.name
+              }), /* @__PURE__ */ jsx("p", {
+                className: "text-gray-600",
+                children: profile2?.email
+              }), /* @__PURE__ */ jsxs("div", {
+                className: "flex items-center space-x-4 mt-2",
+                children: [/* @__PURE__ */ jsxs("div", {
+                  className: "flex items-center space-x-1",
+                  children: [/* @__PURE__ */ jsx(Shield, {
+                    className: "w-4 h-4 text-gray-400"
+                  }), /* @__PURE__ */ jsx("span", {
+                    className: "text-sm text-gray-500 capitalize",
+                    children: profile2?.role
+                  })]
+                }), /* @__PURE__ */ jsxs("div", {
+                  className: "flex items-center space-x-1",
+                  children: [profile2?.verified ? /* @__PURE__ */ jsx(CheckCircle, {
+                    className: "w-4 h-4 text-green-500"
+                  }) : /* @__PURE__ */ jsx(AlertCircle, {
+                    className: "w-4 h-4 text-yellow-500"
+                  }), /* @__PURE__ */ jsx("span", {
+                    className: "text-sm text-gray-500",
+                    children: profile2?.verified ? "Verified" : "Unverified"
+                  })]
+                }), /* @__PURE__ */ jsxs("div", {
+                  className: "flex items-center space-x-1",
+                  children: [/* @__PURE__ */ jsx(Calendar, {
+                    className: "w-4 h-4 text-gray-400"
+                  }), /* @__PURE__ */ jsxs("span", {
+                    className: "text-sm text-gray-500",
+                    children: ["Joined ", profile2 ? formatDate(profile2.created_at) : ""]
+                  })]
+                })]
+              })]
+            })]
+          })
+        }), /* @__PURE__ */ jsxs("div", {
+          className: "bg-white rounded-lg border border-gray-200",
+          children: [/* @__PURE__ */ jsx("div", {
+            className: "border-b border-gray-200",
+            children: /* @__PURE__ */ jsxs("nav", {
+              className: "flex space-x-8 px-6",
+              "aria-label": "Tabs",
+              children: [/* @__PURE__ */ jsx("button", {
+                onClick: () => setActiveTab("profile"),
+                className: `py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === "profile" ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}`,
+                children: /* @__PURE__ */ jsxs("div", {
+                  className: "flex items-center space-x-2",
+                  children: [/* @__PURE__ */ jsx(User, {
+                    className: "w-4 h-4"
+                  }), /* @__PURE__ */ jsx("span", {
+                    children: "Profile Details"
+                  })]
+                })
+              }), /* @__PURE__ */ jsx("button", {
+                onClick: () => setActiveTab("password"),
+                className: `py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === "password" ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}`,
+                children: /* @__PURE__ */ jsxs("div", {
+                  className: "flex items-center space-x-2",
+                  children: [/* @__PURE__ */ jsx(Lock, {
+                    className: "w-4 h-4"
+                  }), /* @__PURE__ */ jsx("span", {
+                    children: "Change Password"
+                  })]
+                })
+              })]
+            })
+          }), /* @__PURE__ */ jsxs("div", {
+            className: "p-6",
+            children: [activeTab === "profile" && /* @__PURE__ */ jsxs("div", {
+              children: [/* @__PURE__ */ jsx("h3", {
+                className: "text-lg font-medium text-gray-900 mb-4",
+                children: "Update Profile Information"
+              }), /* @__PURE__ */ jsxs("form", {
+                onSubmit: handleProfileUpdate,
+                className: "space-y-4",
+                children: [/* @__PURE__ */ jsxs("div", {
+                  className: "grid grid-cols-1 md:grid-cols-2 gap-4",
+                  children: [/* @__PURE__ */ jsxs("div", {
+                    children: [/* @__PURE__ */ jsx("label", {
+                      htmlFor: "name",
+                      className: "block text-sm font-medium text-gray-700 mb-1",
+                      children: "Full Name"
+                    }), /* @__PURE__ */ jsx(Input, {
+                      type: "text",
+                      id: "name",
+                      value: profileFormData.name,
+                      onChange: (e) => setProfileFormData((prev) => ({
+                        ...prev,
+                        name: e.target.value
+                      })),
+                      placeholder: "Enter your full name",
+                      required: true,
+                      icon: /* @__PURE__ */ jsx(User, {
+                        className: "h-4 w-4"
+                      })
+                    })]
+                  }), /* @__PURE__ */ jsxs("div", {
+                    children: [/* @__PURE__ */ jsx("label", {
+                      htmlFor: "email",
+                      className: "block text-sm font-medium text-gray-700 mb-1",
+                      children: "Email Address"
+                    }), /* @__PURE__ */ jsx(Input, {
+                      type: "email",
+                      id: "email",
+                      value: profileFormData.email,
+                      onChange: (e) => setProfileFormData((prev) => ({
+                        ...prev,
+                        email: e.target.value
+                      })),
+                      placeholder: "Enter your email address",
+                      required: true,
+                      icon: /* @__PURE__ */ jsx(Mail, {
+                        className: "h-4 w-4"
+                      })
+                    })]
+                  })]
+                }), /* @__PURE__ */ jsx("div", {
+                  className: "flex justify-end",
+                  children: /* @__PURE__ */ jsx("button", {
+                    type: "submit",
+                    disabled: profileUpdating,
+                    className: "bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors",
+                    children: profileUpdating ? "Updating..." : "Update Profile"
+                  })
+                })]
+              })]
+            }), activeTab === "password" && /* @__PURE__ */ jsxs("div", {
+              className: "max-w-md mx-auto",
+              children: [/* @__PURE__ */ jsxs("div", {
+                className: "text-center mb-8",
+                children: [/* @__PURE__ */ jsx("div", {
+                  className: "mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4",
+                  children: /* @__PURE__ */ jsx(Lock, {
+                    className: "w-8 h-8 text-blue-600"
+                  })
+                }), /* @__PURE__ */ jsx("h3", {
+                  className: "text-2xl font-semibold text-gray-900 mb-2",
+                  children: "Change Password"
+                }), /* @__PURE__ */ jsx("p", {
+                  className: "text-gray-600",
+                  children: "To change your password, please fill in the fields below. Your password must contain at least 8 characters, it must also include at least one upper case letter, one lower case letter, one number and one special character."
+                })]
+              }), /* @__PURE__ */ jsxs("form", {
+                onSubmit: handlePasswordChange,
+                className: "space-y-6",
+                children: [/* @__PURE__ */ jsxs("div", {
+                  children: [/* @__PURE__ */ jsx("label", {
+                    htmlFor: "current_password",
+                    className: "block text-sm font-medium text-gray-900 mb-2",
+                    children: "Current Password"
+                  }), /* @__PURE__ */ jsx(Input, {
+                    type: showCurrentPassword ? "text" : "password",
+                    id: "current_password",
+                    value: passwordFormData.current_password,
+                    onChange: (e) => setPasswordFormData((prev) => ({
+                      ...prev,
+                      current_password: e.target.value
+                    })),
+                    placeholder: "Current Password",
+                    required: true,
+                    icon: /* @__PURE__ */ jsx(Lock, {
+                      className: "h-4 w-4"
+                    }),
+                    rightIcon: /* @__PURE__ */ jsx("button", {
+                      type: "button",
+                      onClick: () => setShowCurrentPassword(!showCurrentPassword),
+                      className: "text-gray-400 hover:text-gray-600",
+                      children: showCurrentPassword ? /* @__PURE__ */ jsx(EyeOff, {
+                        className: "h-4 w-4"
+                      }) : /* @__PURE__ */ jsx(Eye, {
+                        className: "h-4 w-4"
+                      })
+                    })
+                  })]
+                }), /* @__PURE__ */ jsxs("div", {
+                  children: [/* @__PURE__ */ jsx("label", {
+                    htmlFor: "new_password",
+                    className: "block text-sm font-medium text-gray-900 mb-2",
+                    children: "New Password"
+                  }), /* @__PURE__ */ jsx(Input, {
+                    type: showNewPassword ? "text" : "password",
+                    id: "new_password",
+                    value: passwordFormData.new_password,
+                    onChange: (e) => setPasswordFormData((prev) => ({
+                      ...prev,
+                      new_password: e.target.value
+                    })),
+                    placeholder: "New Password",
+                    required: true,
+                    minLength: 8,
+                    icon: /* @__PURE__ */ jsx(Lock, {
+                      className: "h-4 w-4"
+                    }),
+                    rightIcon: /* @__PURE__ */ jsx("button", {
+                      type: "button",
+                      onClick: () => setShowNewPassword(!showNewPassword),
+                      className: "text-gray-400 hover:text-gray-600",
+                      children: showNewPassword ? /* @__PURE__ */ jsx(EyeOff, {
+                        className: "h-4 w-4"
+                      }) : /* @__PURE__ */ jsx(Eye, {
+                        className: "h-4 w-4"
+                      })
+                    })
+                  })]
+                }), /* @__PURE__ */ jsxs("div", {
+                  children: [/* @__PURE__ */ jsx("label", {
+                    htmlFor: "confirm_password",
+                    className: "block text-sm font-medium text-gray-900 mb-2",
+                    children: "Confirm Password"
+                  }), /* @__PURE__ */ jsx(Input, {
+                    type: showConfirmPassword ? "text" : "password",
+                    id: "confirm_password",
+                    value: passwordFormData.confirm_password,
+                    onChange: (e) => setPasswordFormData((prev) => ({
+                      ...prev,
+                      confirm_password: e.target.value
+                    })),
+                    placeholder: "Confirm Password",
+                    required: true,
+                    icon: /* @__PURE__ */ jsx(Lock, {
+                      className: "h-4 w-4"
+                    }),
+                    rightIcon: /* @__PURE__ */ jsx("button", {
+                      type: "button",
+                      onClick: () => setShowConfirmPassword(!showConfirmPassword),
+                      className: "text-gray-400 hover:text-gray-600",
+                      children: showConfirmPassword ? /* @__PURE__ */ jsx(EyeOff, {
+                        className: "h-4 w-4"
+                      }) : /* @__PURE__ */ jsx(Eye, {
+                        className: "h-4 w-4"
+                      })
+                    })
+                  })]
+                }), /* @__PURE__ */ jsx("button", {
+                  type: "submit",
+                  disabled: passwordChanging,
+                  className: "w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors",
+                  children: passwordChanging ? "Changing..." : "Change Password"
+                })]
+              })]
+            })]
+          })]
+        })]
+      })
+    })
+  });
+});
+const route10 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  default: profile
 }, Symbol.toStringTag, { value: "Module" }));
 const changelogEntries = [{
   id: 1,
@@ -2599,7 +4574,7 @@ const changelog = UNSAFE_withComponentProps(function Changelog() {
           const config = typeConfig[entry2.type];
           const IconComponent = config.icon;
           return /* @__PURE__ */ jsx("div", {
-            className: `bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-md transition-shadow ${config.bgColor} ${config.borderColor}`,
+            className: `bg-white rounded-lg border border-gray-200 overflow-hidden hover:-md transition- ${config.bgColor} ${config.borderColor}`,
             children: /* @__PURE__ */ jsxs("div", {
               className: "p-6",
               children: [/* @__PURE__ */ jsx("div", {
@@ -2676,7 +4651,7 @@ const changelog = UNSAFE_withComponentProps(function Changelog() {
     })
   });
 });
-const route7 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route11 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: changelog
 }, Symbol.toStringTag, { value: "Module" }));
@@ -2825,35 +4800,32 @@ const settings = UNSAFE_withComponentProps(function Settings2() {
                   children: [/* @__PURE__ */ jsx("label", {
                     className: "block text-sm font-medium text-gray-700 mb-1",
                     children: "First name"
-                  }), /* @__PURE__ */ jsx("input", {
+                  }), /* @__PURE__ */ jsx(Input, {
                     type: "text",
                     name: "firstName",
                     value: profileData.firstName,
-                    onChange: handleProfileChange,
-                    className: "w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    onChange: handleProfileChange
                   })]
                 }), /* @__PURE__ */ jsxs("div", {
                   children: [/* @__PURE__ */ jsx("label", {
                     className: "block text-sm font-medium text-gray-700 mb-1",
                     children: "Last name"
-                  }), /* @__PURE__ */ jsx("input", {
+                  }), /* @__PURE__ */ jsx(Input, {
                     type: "text",
                     name: "lastName",
                     value: profileData.lastName,
-                    onChange: handleProfileChange,
-                    className: "w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    onChange: handleProfileChange
                   })]
                 })]
               }), /* @__PURE__ */ jsxs("div", {
                 children: [/* @__PURE__ */ jsx("label", {
                   className: "block text-sm font-medium text-gray-700 mb-1",
                   children: "Email address"
-                }), /* @__PURE__ */ jsx("input", {
+                }), /* @__PURE__ */ jsx(Input, {
                   type: "email",
                   name: "email",
                   value: profileData.email,
-                  onChange: handleProfileChange,
-                  className: "w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  onChange: handleProfileChange
                 })]
               }), /* @__PURE__ */ jsxs("div", {
                 className: "grid grid-cols-1 md:grid-cols-2 gap-6",
@@ -2861,23 +4833,21 @@ const settings = UNSAFE_withComponentProps(function Settings2() {
                   children: [/* @__PURE__ */ jsx("label", {
                     className: "block text-sm font-medium text-gray-700 mb-1",
                     children: "Company"
-                  }), /* @__PURE__ */ jsx("input", {
+                  }), /* @__PURE__ */ jsx(Input, {
                     type: "text",
                     name: "company",
                     value: profileData.company,
-                    onChange: handleProfileChange,
-                    className: "w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    onChange: handleProfileChange
                   })]
                 }), /* @__PURE__ */ jsxs("div", {
                   children: [/* @__PURE__ */ jsx("label", {
                     className: "block text-sm font-medium text-gray-700 mb-1",
                     children: "Job title"
-                  }), /* @__PURE__ */ jsx("input", {
+                  }), /* @__PURE__ */ jsx(Input, {
                     type: "text",
                     name: "jobTitle",
                     value: profileData.jobTitle,
-                    onChange: handleProfileChange,
-                    className: "w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    onChange: handleProfileChange
                   })]
                 })]
               }), /* @__PURE__ */ jsxs("div", {
@@ -2928,49 +4898,43 @@ const settings = UNSAFE_withComponentProps(function Settings2() {
                   children: [/* @__PURE__ */ jsx("label", {
                     className: "block text-sm font-medium text-gray-700 mb-1",
                     children: "Current password"
-                  }), /* @__PURE__ */ jsxs("div", {
-                    className: "relative",
-                    children: [/* @__PURE__ */ jsx("input", {
-                      type: showCurrentPassword ? "text" : "password",
-                      name: "currentPassword",
-                      value: passwordData.currentPassword,
-                      onChange: handlePasswordChange,
-                      className: "w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                      placeholder: "Enter current password"
-                    }), /* @__PURE__ */ jsx("button", {
+                  }), /* @__PURE__ */ jsx(Input, {
+                    type: showCurrentPassword ? "text" : "password",
+                    name: "currentPassword",
+                    value: passwordData.currentPassword,
+                    onChange: handlePasswordChange,
+                    placeholder: "Enter current password",
+                    rightIcon: /* @__PURE__ */ jsx("button", {
                       type: "button",
-                      className: "absolute inset-y-0 right-0 pr-3 flex items-center",
                       onClick: () => setShowCurrentPassword(!showCurrentPassword),
+                      className: "text-gray-400 hover:text-gray-600",
                       children: showCurrentPassword ? /* @__PURE__ */ jsx(EyeOff, {
-                        className: "h-4 w-4 text-gray-400"
+                        className: "h-4 w-4"
                       }) : /* @__PURE__ */ jsx(Eye, {
-                        className: "h-4 w-4 text-gray-400"
+                        className: "h-4 w-4"
                       })
-                    })]
+                    })
                   })]
                 }), /* @__PURE__ */ jsxs("div", {
                   children: [/* @__PURE__ */ jsx("label", {
                     className: "block text-sm font-medium text-gray-700 mb-1",
                     children: "New password"
-                  }), /* @__PURE__ */ jsxs("div", {
-                    className: "relative",
-                    children: [/* @__PURE__ */ jsx("input", {
-                      type: showNewPassword ? "text" : "password",
-                      name: "newPassword",
-                      value: passwordData.newPassword,
-                      onChange: handlePasswordChange,
-                      className: "w-full px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent",
-                      placeholder: "Enter new password"
-                    }), /* @__PURE__ */ jsx("button", {
+                  }), /* @__PURE__ */ jsx(Input, {
+                    type: showNewPassword ? "text" : "password",
+                    name: "newPassword",
+                    value: passwordData.newPassword,
+                    onChange: handlePasswordChange,
+                    placeholder: "Enter new password",
+                    rightIcon: /* @__PURE__ */ jsx("button", {
                       type: "button",
-                      className: "absolute inset-y-0 right-0 pr-3 flex items-center",
                       onClick: () => setShowNewPassword(!showNewPassword),
+                      className: "text-gray-400 hover:text-gray-600",
                       children: showNewPassword ? /* @__PURE__ */ jsx(EyeOff, {
-                        className: "h-4 w-4 text-gray-400"
+                        className: "h-4 w-4"
                       }) : /* @__PURE__ */ jsx(Eye, {
-                        className: "h-4 w-4 text-gray-400"
+                        className: "h-4 w-4"
                       })
-                    })]
+                    })
                   }), passwordData.newPassword && /* @__PURE__ */ jsxs("div", {
                     className: "mt-2 space-y-1",
                     children: [/* @__PURE__ */ jsx("div", {
@@ -3020,25 +4984,23 @@ const settings = UNSAFE_withComponentProps(function Settings2() {
                   children: [/* @__PURE__ */ jsx("label", {
                     className: "block text-sm font-medium text-gray-700 mb-1",
                     children: "Confirm new password"
-                  }), /* @__PURE__ */ jsxs("div", {
-                    className: "relative",
-                    children: [/* @__PURE__ */ jsx("input", {
-                      type: showConfirmPassword ? "text" : "password",
-                      name: "confirmPassword",
-                      value: passwordData.confirmPassword,
-                      onChange: handlePasswordChange,
-                      className: `w-full px-3 py-2 pr-10 border rounded-md focus:outline-none focus:ring-2 ${passwordData.confirmPassword && !passwordsMatch ? "border-red-300 focus:ring-red-500 focus:border-red-500" : "border-gray-300 focus:ring-blue-500 focus:border-blue-500"}`,
-                      placeholder: "Confirm new password"
-                    }), /* @__PURE__ */ jsx("button", {
+                  }), /* @__PURE__ */ jsx(Input, {
+                    type: showConfirmPassword ? "text" : "password",
+                    name: "confirmPassword",
+                    value: passwordData.confirmPassword,
+                    onChange: handlePasswordChange,
+                    placeholder: "Confirm new password",
+                    error: passwordData.confirmPassword && !passwordsMatch,
+                    rightIcon: /* @__PURE__ */ jsx("button", {
                       type: "button",
-                      className: "absolute inset-y-0 right-0 pr-3 flex items-center",
                       onClick: () => setShowConfirmPassword(!showConfirmPassword),
+                      className: "text-gray-400 hover:text-gray-600",
                       children: showConfirmPassword ? /* @__PURE__ */ jsx(EyeOff, {
-                        className: "h-4 w-4 text-gray-400"
+                        className: "h-4 w-4"
                       }) : /* @__PURE__ */ jsx(Eye, {
-                        className: "h-4 w-4 text-gray-400"
+                        className: "h-4 w-4"
                       })
-                    })]
+                    })
                   }), passwordData.confirmPassword && !passwordsMatch && /* @__PURE__ */ jsx("p", {
                     className: "mt-1 text-xs text-red-600",
                     children: "Passwords do not match"
@@ -3269,7 +5231,7 @@ const settings = UNSAFE_withComponentProps(function Settings2() {
     })
   });
 });
-const route8 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route12 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: settings
 }, Symbol.toStringTag, { value: "Module" }));
@@ -3346,7 +5308,7 @@ const login = UNSAFE_withComponentProps(function Login() {
     }), /* @__PURE__ */ jsx("div", {
       className: "mt-8 sm:mx-auto sm:w-full sm:max-w-md",
       children: /* @__PURE__ */ jsxs("div", {
-        className: "bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10",
+        className: "bg-white py-8 px-4 border border-gray-200 sm:rounded-lg sm:px-10",
         children: [/* @__PURE__ */ jsxs("div", {
           className: "space-y-6",
           children: [/* @__PURE__ */ jsxs("div", {
@@ -3356,7 +5318,7 @@ const login = UNSAFE_withComponentProps(function Login() {
               children: "Email address"
             }), /* @__PURE__ */ jsx("div", {
               className: "mt-1",
-              children: /* @__PURE__ */ jsx("input", {
+              children: /* @__PURE__ */ jsx(Input, {
                 id: "email",
                 name: "email",
                 type: "email",
@@ -3365,7 +5327,6 @@ const login = UNSAFE_withComponentProps(function Login() {
                 value: formData.email,
                 onChange: handleChange,
                 onKeyDown: handleKeyDown,
-                className: "appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm",
                 placeholder: "Enter your email"
               })
             })]
@@ -3374,9 +5335,9 @@ const login = UNSAFE_withComponentProps(function Login() {
               htmlFor: "password",
               className: "block text-sm font-medium text-gray-700",
               children: "Password"
-            }), /* @__PURE__ */ jsxs("div", {
-              className: "mt-1 relative",
-              children: [/* @__PURE__ */ jsx("input", {
+            }), /* @__PURE__ */ jsx("div", {
+              className: "mt-1",
+              children: /* @__PURE__ */ jsx(Input, {
                 id: "password",
                 name: "password",
                 type: showPassword ? "text" : "password",
@@ -3385,18 +5346,18 @@ const login = UNSAFE_withComponentProps(function Login() {
                 value: formData.password,
                 onChange: handleChange,
                 onKeyDown: handleKeyDown,
-                className: "appearance-none block w-full px-3 py-2 pr-10 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm",
-                placeholder: "Enter your password"
-              }), /* @__PURE__ */ jsx("button", {
-                type: "button",
-                className: "absolute inset-y-0 right-0 pr-3 flex items-center",
-                onClick: () => setShowPassword(!showPassword),
-                children: showPassword ? /* @__PURE__ */ jsx(EyeOff, {
-                  className: "h-4 w-4 text-gray-400"
-                }) : /* @__PURE__ */ jsx(Eye, {
-                  className: "h-4 w-4 text-gray-400"
+                placeholder: "Enter your password",
+                rightIcon: /* @__PURE__ */ jsx("button", {
+                  type: "button",
+                  onClick: () => setShowPassword(!showPassword),
+                  className: "text-gray-400 hover:text-gray-600",
+                  children: showPassword ? /* @__PURE__ */ jsx(EyeOff, {
+                    className: "h-4 w-4"
+                  }) : /* @__PURE__ */ jsx(Eye, {
+                    className: "h-4 w-4"
+                  })
                 })
-              })]
+              })
             })]
           }), /* @__PURE__ */ jsxs("div", {
             className: "flex items-center justify-between",
@@ -3427,7 +5388,7 @@ const login = UNSAFE_withComponentProps(function Login() {
               type: "button",
               onClick: handleSubmit,
               disabled: isLoading,
-              className: "w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed",
+              className: "w-full flex justify-center py-3 px-4 border border-transparent rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed",
               children: isLoading ? "Signing in..." : "Sign in"
             })
           })]
@@ -3451,7 +5412,7 @@ const login = UNSAFE_withComponentProps(function Login() {
             className: "mt-6 grid grid-cols-2 gap-3",
             children: [/* @__PURE__ */ jsx("div", {
               children: /* @__PURE__ */ jsxs("button", {
-                className: "w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50",
+                className: "w-full inline-flex justify-center py-3 px-4 border border-gray-300 rounded-lg bg-white text-sm font-medium text-gray-500 hover:bg-gray-50",
                 children: [/* @__PURE__ */ jsxs("svg", {
                   className: "h-5 w-5",
                   fill: "currentColor",
@@ -3476,7 +5437,7 @@ const login = UNSAFE_withComponentProps(function Login() {
               })
             }), /* @__PURE__ */ jsx("div", {
               children: /* @__PURE__ */ jsxs("button", {
-                className: "w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50",
+                className: "w-full inline-flex justify-center py-3 px-4 border border-gray-300 rounded-lg bg-white text-sm font-medium text-gray-500 hover:bg-gray-50",
                 children: [/* @__PURE__ */ jsx("svg", {
                   className: "h-5 w-5",
                   fill: "currentColor",
@@ -3510,7 +5471,7 @@ const login = UNSAFE_withComponentProps(function Login() {
     })]
   });
 });
-const route9 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route13 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: login
 }, Symbol.toStringTag, { value: "Module" }));
@@ -3611,7 +5572,7 @@ const register = UNSAFE_withComponentProps(function Register() {
     }), /* @__PURE__ */ jsx("div", {
       className: "mt-8 sm:mx-auto sm:w-full sm:max-w-md",
       children: /* @__PURE__ */ jsxs("div", {
-        className: "bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10",
+        className: "bg-white py-8 px-4  sm:rounded-lg sm:px-10",
         children: [/* @__PURE__ */ jsxs("form", {
           className: "space-y-6",
           onSubmit: handleSubmit,
@@ -3624,14 +5585,13 @@ const register = UNSAFE_withComponentProps(function Register() {
                 children: "First name"
               }), /* @__PURE__ */ jsx("div", {
                 className: "mt-1",
-                children: /* @__PURE__ */ jsx("input", {
+                children: /* @__PURE__ */ jsx(Input, {
                   id: "firstName",
                   name: "firstName",
                   type: "text",
                   required: true,
                   value: formData.firstName,
                   onChange: handleChange,
-                  className: "appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm",
                   placeholder: "First name"
                 })
               })]
@@ -3642,14 +5602,13 @@ const register = UNSAFE_withComponentProps(function Register() {
                 children: "Last name"
               }), /* @__PURE__ */ jsx("div", {
                 className: "mt-1",
-                children: /* @__PURE__ */ jsx("input", {
+                children: /* @__PURE__ */ jsx(Input, {
                   id: "lastName",
                   name: "lastName",
                   type: "text",
                   required: true,
                   value: formData.lastName,
                   onChange: handleChange,
-                  className: "appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm",
                   placeholder: "Last name"
                 })
               })]
@@ -3661,7 +5620,7 @@ const register = UNSAFE_withComponentProps(function Register() {
               children: "Email address"
             }), /* @__PURE__ */ jsx("div", {
               className: "mt-1",
-              children: /* @__PURE__ */ jsx("input", {
+              children: /* @__PURE__ */ jsx(Input, {
                 id: "email",
                 name: "email",
                 type: "email",
@@ -3669,7 +5628,6 @@ const register = UNSAFE_withComponentProps(function Register() {
                 required: true,
                 value: formData.email,
                 onChange: handleChange,
-                className: "appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm",
                 placeholder: "Enter your email"
               })
             })]
@@ -3680,13 +5638,12 @@ const register = UNSAFE_withComponentProps(function Register() {
               children: "Company (optional)"
             }), /* @__PURE__ */ jsx("div", {
               className: "mt-1",
-              children: /* @__PURE__ */ jsx("input", {
+              children: /* @__PURE__ */ jsx(Input, {
                 id: "company",
                 name: "company",
                 type: "text",
                 value: formData.company,
                 onChange: handleChange,
-                className: "appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm",
                 placeholder: "Your company name"
               })
             })]
@@ -3695,27 +5652,27 @@ const register = UNSAFE_withComponentProps(function Register() {
               htmlFor: "password",
               className: "block text-sm font-medium text-gray-700",
               children: "Password"
-            }), /* @__PURE__ */ jsxs("div", {
-              className: "mt-1 relative",
-              children: [/* @__PURE__ */ jsx("input", {
+            }), /* @__PURE__ */ jsx("div", {
+              className: "mt-1",
+              children: /* @__PURE__ */ jsx(Input, {
                 id: "password",
                 name: "password",
                 type: showPassword ? "text" : "password",
                 required: true,
                 value: formData.password,
                 onChange: handleChange,
-                className: "appearance-none block w-full px-3 py-2 pr-10 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm",
-                placeholder: "Create a password"
-              }), /* @__PURE__ */ jsx("button", {
-                type: "button",
-                className: "absolute inset-y-0 right-0 pr-3 flex items-center",
-                onClick: () => setShowPassword(!showPassword),
-                children: showPassword ? /* @__PURE__ */ jsx(EyeOff, {
-                  className: "h-4 w-4 text-gray-400"
-                }) : /* @__PURE__ */ jsx(Eye, {
-                  className: "h-4 w-4 text-gray-400"
+                placeholder: "Create a password",
+                rightIcon: /* @__PURE__ */ jsx("button", {
+                  type: "button",
+                  onClick: () => setShowPassword(!showPassword),
+                  className: "text-gray-400 hover:text-gray-600",
+                  children: showPassword ? /* @__PURE__ */ jsx(EyeOff, {
+                    className: "h-4 w-4"
+                  }) : /* @__PURE__ */ jsx(Eye, {
+                    className: "h-4 w-4"
+                  })
                 })
-              })]
+              })
             }), formData.password && /* @__PURE__ */ jsxs("div", {
               className: "mt-2 space-y-1",
               children: [/* @__PURE__ */ jsx("div", {
@@ -3766,27 +5723,28 @@ const register = UNSAFE_withComponentProps(function Register() {
               htmlFor: "confirmPassword",
               className: "block text-sm font-medium text-gray-700",
               children: "Confirm password"
-            }), /* @__PURE__ */ jsxs("div", {
-              className: "mt-1 relative",
-              children: [/* @__PURE__ */ jsx("input", {
+            }), /* @__PURE__ */ jsx("div", {
+              className: "mt-1",
+              children: /* @__PURE__ */ jsx(Input, {
                 id: "confirmPassword",
                 name: "confirmPassword",
                 type: showConfirmPassword ? "text" : "password",
                 required: true,
                 value: formData.confirmPassword,
                 onChange: handleChange,
-                className: `appearance-none block w-full px-3 py-2 pr-10 border rounded-md placeholder-gray-400 focus:outline-none focus:ring-blue-500 sm:text-sm ${formData.confirmPassword && !passwordsMatch ? "border-red-300 focus:border-red-500" : "border-gray-300 focus:border-blue-500"}`,
-                placeholder: "Confirm your password"
-              }), /* @__PURE__ */ jsx("button", {
-                type: "button",
-                className: "absolute inset-y-0 right-0 pr-3 flex items-center",
-                onClick: () => setShowConfirmPassword(!showConfirmPassword),
-                children: showConfirmPassword ? /* @__PURE__ */ jsx(EyeOff, {
-                  className: "h-4 w-4 text-gray-400"
-                }) : /* @__PURE__ */ jsx(Eye, {
-                  className: "h-4 w-4 text-gray-400"
+                placeholder: "Confirm your password",
+                error: formData.confirmPassword && !passwordsMatch,
+                rightIcon: /* @__PURE__ */ jsx("button", {
+                  type: "button",
+                  onClick: () => setShowConfirmPassword(!showConfirmPassword),
+                  className: "text-gray-400 hover:text-gray-600",
+                  children: showConfirmPassword ? /* @__PURE__ */ jsx(EyeOff, {
+                    className: "h-4 w-4"
+                  }) : /* @__PURE__ */ jsx(Eye, {
+                    className: "h-4 w-4"
+                  })
                 })
-              })]
+              })
             }), formData.confirmPassword && !passwordsMatch && /* @__PURE__ */ jsx("p", {
               className: "mt-1 text-xs text-red-600",
               children: "Passwords do not match"
@@ -3838,7 +5796,7 @@ const register = UNSAFE_withComponentProps(function Register() {
             children: /* @__PURE__ */ jsx("button", {
               type: "submit",
               disabled: !allRequirementsMet || !passwordsMatch || !formData.agreeToTerms,
-              className: "w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed",
+              className: "w-full flex justify-center py-3 px-4 border border-transparent rounded-lg  text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed",
               children: "Create account"
             })
           })]
@@ -3862,7 +5820,7 @@ const register = UNSAFE_withComponentProps(function Register() {
             className: "mt-6 grid grid-cols-2 gap-3",
             children: [/* @__PURE__ */ jsx("div", {
               children: /* @__PURE__ */ jsxs("button", {
-                className: "w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50",
+                className: "w-full inline-flex justify-center py-3 px-4 border border-gray-300 rounded-lg  bg-white text-sm font-medium text-gray-500 hover:bg-gray-50",
                 children: [/* @__PURE__ */ jsxs("svg", {
                   className: "h-5 w-5",
                   fill: "currentColor",
@@ -3887,7 +5845,7 @@ const register = UNSAFE_withComponentProps(function Register() {
               })
             }), /* @__PURE__ */ jsx("div", {
               children: /* @__PURE__ */ jsxs("button", {
-                className: "w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50",
+                className: "w-full inline-flex justify-center py-3 px-4 border border-gray-300 rounded-lg  bg-white text-sm font-medium text-gray-500 hover:bg-gray-50",
                 children: [/* @__PURE__ */ jsx("svg", {
                   className: "h-5 w-5",
                   fill: "currentColor",
@@ -3907,7 +5865,7 @@ const register = UNSAFE_withComponentProps(function Register() {
     })]
   });
 });
-const route10 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route14 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: register
 }, Symbol.toStringTag, { value: "Module" }));
@@ -3929,7 +5887,7 @@ const forgotPassword = UNSAFE_withComponentProps(function ForgotPassword() {
       children: /* @__PURE__ */ jsx("div", {
         className: "sm:mx-auto sm:w-full sm:max-w-md",
         children: /* @__PURE__ */ jsx("div", {
-          className: "bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10",
+          className: "bg-white py-8 px-4  sm:rounded-lg sm:px-10",
           children: /* @__PURE__ */ jsxs("div", {
             className: "text-center",
             children: [/* @__PURE__ */ jsx("div", {
@@ -3952,11 +5910,11 @@ const forgotPassword = UNSAFE_withComponentProps(function ForgotPassword() {
                 children: "Didn't receive the email? Check your spam folder or try again."
               }), /* @__PURE__ */ jsx("button", {
                 onClick: () => setIsSubmitted(false),
-                className: "w-full flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500",
+                className: "w-full flex justify-center py-3 px-4 border border-gray-300 rounded-lg  text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500",
                 children: "Try a different email"
               }), /* @__PURE__ */ jsx(Link, {
                 to: "/login",
-                className: "w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500",
+                className: "w-full flex justify-center py-3 px-4 border border-transparent rounded-lg  text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500",
                 children: "Back to sign in"
               })]
             })]
@@ -3987,7 +5945,7 @@ const forgotPassword = UNSAFE_withComponentProps(function ForgotPassword() {
     }), /* @__PURE__ */ jsx("div", {
       className: "mt-8 sm:mx-auto sm:w-full sm:max-w-md",
       children: /* @__PURE__ */ jsxs("div", {
-        className: "bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10",
+        className: "bg-white py-8 px-4  sm:rounded-lg sm:px-10",
         children: [/* @__PURE__ */ jsxs("form", {
           className: "space-y-6",
           onSubmit: handleSubmit,
@@ -3998,7 +5956,7 @@ const forgotPassword = UNSAFE_withComponentProps(function ForgotPassword() {
               children: "Email address"
             }), /* @__PURE__ */ jsx("div", {
               className: "mt-1",
-              children: /* @__PURE__ */ jsx("input", {
+              children: /* @__PURE__ */ jsx(Input, {
                 id: "email",
                 name: "email",
                 type: "email",
@@ -4006,7 +5964,6 @@ const forgotPassword = UNSAFE_withComponentProps(function ForgotPassword() {
                 required: true,
                 value: email,
                 onChange: (e) => setEmail(e.target.value),
-                className: "appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm",
                 placeholder: "Enter your email address"
               })
             }), /* @__PURE__ */ jsx("p", {
@@ -4017,7 +5974,7 @@ const forgotPassword = UNSAFE_withComponentProps(function ForgotPassword() {
             children: /* @__PURE__ */ jsx("button", {
               type: "submit",
               disabled: isLoading || !email,
-              className: "w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed",
+              className: "w-full flex justify-center py-3 px-4 border border-transparent rounded-lg  text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed",
               children: isLoading ? /* @__PURE__ */ jsxs("div", {
                 className: "flex items-center space-x-2",
                 children: [/* @__PURE__ */ jsx("div", {
@@ -4070,7 +6027,7 @@ const forgotPassword = UNSAFE_withComponentProps(function ForgotPassword() {
     })]
   });
 });
-const route11 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route15 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: forgotPassword
 }, Symbol.toStringTag, { value: "Module" }));
@@ -4134,7 +6091,7 @@ const resetPassword = UNSAFE_withComponentProps(function ResetPassword() {
       children: /* @__PURE__ */ jsx("div", {
         className: "sm:mx-auto sm:w-full sm:max-w-md",
         children: /* @__PURE__ */ jsx("div", {
-          className: "bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10",
+          className: "bg-white py-8 px-4  sm:rounded-lg sm:px-10",
           children: /* @__PURE__ */ jsxs("div", {
             className: "text-center",
             children: [/* @__PURE__ */ jsx("div", {
@@ -4161,11 +6118,11 @@ const resetPassword = UNSAFE_withComponentProps(function ResetPassword() {
               className: "space-y-3",
               children: [/* @__PURE__ */ jsx(Link, {
                 to: "/forgot-password",
-                className: "w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500",
+                className: "w-full flex justify-center py-3 px-4 border border-transparent rounded-lg  text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500",
                 children: "Request new reset link"
               }), /* @__PURE__ */ jsx(Link, {
                 to: "/login",
-                className: "w-full flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500",
+                className: "w-full flex justify-center py-3 px-4 border border-gray-300 rounded-lg  text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500",
                 children: "Back to sign in"
               })]
             })]
@@ -4180,7 +6137,7 @@ const resetPassword = UNSAFE_withComponentProps(function ResetPassword() {
       children: /* @__PURE__ */ jsx("div", {
         className: "sm:mx-auto sm:w-full sm:max-w-md",
         children: /* @__PURE__ */ jsx("div", {
-          className: "bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10",
+          className: "bg-white py-8 px-4  sm:rounded-lg sm:px-10",
           children: /* @__PURE__ */ jsxs("div", {
             className: "text-center",
             children: [/* @__PURE__ */ jsx("div", {
@@ -4196,7 +6153,7 @@ const resetPassword = UNSAFE_withComponentProps(function ResetPassword() {
               children: "Your password has been successfully updated. You can now sign in with your new password."
             }), /* @__PURE__ */ jsx(Link, {
               to: "/login",
-              className: "w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500",
+              className: "w-full flex justify-center py-3 px-4 border border-transparent rounded-lg  text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500",
               children: "Sign in to your account"
             })]
           })
@@ -4226,7 +6183,7 @@ const resetPassword = UNSAFE_withComponentProps(function ResetPassword() {
     }), /* @__PURE__ */ jsx("div", {
       className: "mt-8 sm:mx-auto sm:w-full sm:max-w-md",
       children: /* @__PURE__ */ jsx("div", {
-        className: "bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10",
+        className: "bg-white py-8 px-4  sm:rounded-lg sm:px-10",
         children: /* @__PURE__ */ jsxs("form", {
           className: "space-y-6",
           onSubmit: handleSubmit,
@@ -4235,27 +6192,27 @@ const resetPassword = UNSAFE_withComponentProps(function ResetPassword() {
               htmlFor: "password",
               className: "block text-sm font-medium text-gray-700",
               children: "New password"
-            }), /* @__PURE__ */ jsxs("div", {
-              className: "mt-1 relative",
-              children: [/* @__PURE__ */ jsx("input", {
+            }), /* @__PURE__ */ jsx("div", {
+              className: "mt-1",
+              children: /* @__PURE__ */ jsx(Input, {
                 id: "password",
                 name: "password",
                 type: showPassword ? "text" : "password",
                 required: true,
                 value: formData.password,
                 onChange: handleChange,
-                className: "appearance-none block w-full px-3 py-2 pr-10 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm",
-                placeholder: "Enter your new password"
-              }), /* @__PURE__ */ jsx("button", {
-                type: "button",
-                className: "absolute inset-y-0 right-0 pr-3 flex items-center",
-                onClick: () => setShowPassword(!showPassword),
-                children: showPassword ? /* @__PURE__ */ jsx(EyeOff, {
-                  className: "h-4 w-4 text-gray-400"
-                }) : /* @__PURE__ */ jsx(Eye, {
-                  className: "h-4 w-4 text-gray-400"
+                placeholder: "Enter your new password",
+                rightIcon: /* @__PURE__ */ jsx("button", {
+                  type: "button",
+                  onClick: () => setShowPassword(!showPassword),
+                  className: "text-gray-400 hover:text-gray-600",
+                  children: showPassword ? /* @__PURE__ */ jsx(EyeOff, {
+                    className: "h-4 w-4"
+                  }) : /* @__PURE__ */ jsx(Eye, {
+                    className: "h-4 w-4"
+                  })
                 })
-              })]
+              })
             }), formData.password && /* @__PURE__ */ jsxs("div", {
               className: "mt-2 space-y-1",
               children: [/* @__PURE__ */ jsx("div", {
@@ -4306,27 +6263,28 @@ const resetPassword = UNSAFE_withComponentProps(function ResetPassword() {
               htmlFor: "confirmPassword",
               className: "block text-sm font-medium text-gray-700",
               children: "Confirm new password"
-            }), /* @__PURE__ */ jsxs("div", {
-              className: "mt-1 relative",
-              children: [/* @__PURE__ */ jsx("input", {
+            }), /* @__PURE__ */ jsx("div", {
+              className: "mt-1",
+              children: /* @__PURE__ */ jsx(Input, {
                 id: "confirmPassword",
                 name: "confirmPassword",
                 type: showConfirmPassword ? "text" : "password",
                 required: true,
                 value: formData.confirmPassword,
                 onChange: handleChange,
-                className: `appearance-none block w-full px-3 py-2 pr-10 border rounded-md placeholder-gray-400 focus:outline-none focus:ring-blue-500 sm:text-sm ${formData.confirmPassword && !passwordsMatch ? "border-red-300 focus:border-red-500" : "border-gray-300 focus:border-blue-500"}`,
-                placeholder: "Confirm your new password"
-              }), /* @__PURE__ */ jsx("button", {
-                type: "button",
-                className: "absolute inset-y-0 right-0 pr-3 flex items-center",
-                onClick: () => setShowConfirmPassword(!showConfirmPassword),
-                children: showConfirmPassword ? /* @__PURE__ */ jsx(EyeOff, {
-                  className: "h-4 w-4 text-gray-400"
-                }) : /* @__PURE__ */ jsx(Eye, {
-                  className: "h-4 w-4 text-gray-400"
+                placeholder: "Confirm your new password",
+                error: formData.confirmPassword && !passwordsMatch,
+                rightIcon: /* @__PURE__ */ jsx("button", {
+                  type: "button",
+                  onClick: () => setShowConfirmPassword(!showConfirmPassword),
+                  className: "text-gray-400 hover:text-gray-600",
+                  children: showConfirmPassword ? /* @__PURE__ */ jsx(EyeOff, {
+                    className: "h-4 w-4"
+                  }) : /* @__PURE__ */ jsx(Eye, {
+                    className: "h-4 w-4"
+                  })
                 })
-              })]
+              })
             }), formData.confirmPassword && !passwordsMatch && /* @__PURE__ */ jsx("p", {
               className: "mt-1 text-xs text-red-600",
               children: "Passwords do not match"
@@ -4338,7 +6296,7 @@ const resetPassword = UNSAFE_withComponentProps(function ResetPassword() {
             children: /* @__PURE__ */ jsx("button", {
               type: "submit",
               disabled: isLoading || !allRequirementsMet || !passwordsMatch,
-              className: "w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed",
+              className: "w-full flex justify-center py-3 px-4 border border-transparent rounded-lg  text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed",
               children: isLoading ? /* @__PURE__ */ jsxs("div", {
                 className: "flex items-center space-x-2",
                 children: [/* @__PURE__ */ jsx("div", {
@@ -4375,11 +6333,11 @@ const resetPassword = UNSAFE_withComponentProps(function ResetPassword() {
     })]
   });
 });
-const route12 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+const route16 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
   __proto__: null,
   default: resetPassword
 }, Symbol.toStringTag, { value: "Module" }));
-const serverManifest = { "entry": { "module": "/assets/entry.client-QQR3PXqF.js", "imports": ["/assets/chunk-EPOLDU6W-FqQHWOW9.js", "/assets/index-Bmi0sycR.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": true, "module": "/assets/root-Dwlj5kEw.js", "imports": ["/assets/chunk-EPOLDU6W-FqQHWOW9.js", "/assets/index-Bmi0sycR.js", "/assets/index-i0T3QI9t.js", "/assets/utils-BQHNewu7.js"], "css": ["/assets/root-tGV9a2e0.css"], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/home": { "id": "routes/home", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/home-DcOpv4U-.js", "imports": ["/assets/chunk-EPOLDU6W-FqQHWOW9.js", "/assets/dashboard-layout-Ct1xDhEX.js", "/assets/utils-BQHNewu7.js", "/assets/api-aEKs-k91.js", "/assets/chevron-left-BHNl6aCQ.js", "/assets/funnel-BrWQXGyd.js", "/assets/AreaChart-CL1lmHty.js", "/assets/auth-wrapper-D9gcItuR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/accounts": { "id": "routes/accounts", "parentId": "root", "path": "accounts", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/accounts-T2VjEjAY.js", "imports": ["/assets/chunk-EPOLDU6W-FqQHWOW9.js", "/assets/dashboard-layout-Ct1xDhEX.js", "/assets/plus-DB-y6Aae.js", "/assets/search-CZjpDzrB.js", "/assets/funnel-BrWQXGyd.js", "/assets/utils-BQHNewu7.js", "/assets/api-aEKs-k91.js", "/assets/chevron-left-BHNl6aCQ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/ui-layers": { "id": "routes/ui-layers", "parentId": "root", "path": "ui-layers", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/ui-layers-B-ch-r_P.js", "imports": ["/assets/chunk-EPOLDU6W-FqQHWOW9.js", "/assets/dashboard-layout-Ct1xDhEX.js", "/assets/plus-DB-y6Aae.js", "/assets/search-CZjpDzrB.js", "/assets/funnel-BrWQXGyd.js", "/assets/eye-DyYaMh_e.js", "/assets/chevron-left-BHNl6aCQ.js", "/assets/utils-BQHNewu7.js", "/assets/api-aEKs-k91.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/customizations": { "id": "routes/customizations", "parentId": "root", "path": "customizations", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/customizations-Nclu2jVn.js", "imports": ["/assets/chunk-EPOLDU6W-FqQHWOW9.js", "/assets/dashboard-layout-Ct1xDhEX.js", "/assets/plus-DB-y6Aae.js", "/assets/search-CZjpDzrB.js", "/assets/funnel-BrWQXGyd.js", "/assets/eye-DyYaMh_e.js", "/assets/chevron-left-BHNl6aCQ.js", "/assets/utils-BQHNewu7.js", "/assets/api-aEKs-k91.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api-usage": { "id": "routes/api-usage", "parentId": "root", "path": "api-usage", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/api-usage-CzbXOZu-.js", "imports": ["/assets/chunk-EPOLDU6W-FqQHWOW9.js", "/assets/dashboard-layout-Ct1xDhEX.js", "/assets/chevron-left-BHNl6aCQ.js", "/assets/triangle-alert-Dw2AG8zo.js", "/assets/AreaChart-CL1lmHty.js", "/assets/utils-BQHNewu7.js", "/assets/api-aEKs-k91.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api-keys": { "id": "routes/api-keys", "parentId": "root", "path": "api-keys", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/api-keys-CimWqouI.js", "imports": ["/assets/chunk-EPOLDU6W-FqQHWOW9.js", "/assets/index-Bmi0sycR.js", "/assets/dashboard-layout-Ct1xDhEX.js", "/assets/auth-wrapper-D9gcItuR.js", "/assets/api-aEKs-k91.js", "/assets/index-i0T3QI9t.js", "/assets/plus-DB-y6Aae.js", "/assets/trash-2-DyrOrRuQ.js", "/assets/utils-BQHNewu7.js", "/assets/chevron-left-BHNl6aCQ.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/changelog": { "id": "routes/changelog", "parentId": "root", "path": "changelog", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/changelog-B8H2LxLw.js", "imports": ["/assets/chunk-EPOLDU6W-FqQHWOW9.js", "/assets/dashboard-layout-Ct1xDhEX.js", "/assets/triangle-alert-Dw2AG8zo.js", "/assets/chevron-left-BHNl6aCQ.js", "/assets/plus-DB-y6Aae.js", "/assets/utils-BQHNewu7.js", "/assets/api-aEKs-k91.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/settings": { "id": "routes/settings", "parentId": "root", "path": "settings", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/settings-vCymqxTk.js", "imports": ["/assets/chunk-EPOLDU6W-FqQHWOW9.js", "/assets/dashboard-layout-Ct1xDhEX.js", "/assets/chevron-left-BHNl6aCQ.js", "/assets/eye-off-DoS_CnKz.js", "/assets/eye-DyYaMh_e.js", "/assets/check-hhdIjoPw.js", "/assets/trash-2-DyrOrRuQ.js", "/assets/utils-BQHNewu7.js", "/assets/api-aEKs-k91.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/login": { "id": "routes/login", "parentId": "root", "path": "login", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/login-DVGi0gHz.js", "imports": ["/assets/chunk-EPOLDU6W-FqQHWOW9.js", "/assets/api-aEKs-k91.js", "/assets/index-i0T3QI9t.js", "/assets/chevron-left-BHNl6aCQ.js", "/assets/eye-off-DoS_CnKz.js", "/assets/eye-DyYaMh_e.js", "/assets/index-Bmi0sycR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/register": { "id": "routes/register", "parentId": "root", "path": "register", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/register-fGgp8WuA.js", "imports": ["/assets/chunk-EPOLDU6W-FqQHWOW9.js", "/assets/api-aEKs-k91.js", "/assets/index-i0T3QI9t.js", "/assets/chevron-left-BHNl6aCQ.js", "/assets/eye-off-DoS_CnKz.js", "/assets/eye-DyYaMh_e.js", "/assets/check-hhdIjoPw.js", "/assets/index-Bmi0sycR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/forgot-password": { "id": "routes/forgot-password", "parentId": "root", "path": "forgot-password", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/forgot-password-BK_GPMEx.js", "imports": ["/assets/chunk-EPOLDU6W-FqQHWOW9.js", "/assets/chevron-left-BHNl6aCQ.js", "/assets/arrow-left-B2IWgRqO.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/reset-password": { "id": "routes/reset-password", "parentId": "root", "path": "reset-password", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/reset-password-BMGRuz5a.js", "imports": ["/assets/chunk-EPOLDU6W-FqQHWOW9.js", "/assets/check-hhdIjoPw.js", "/assets/chevron-left-BHNl6aCQ.js", "/assets/eye-off-DoS_CnKz.js", "/assets/eye-DyYaMh_e.js", "/assets/arrow-left-B2IWgRqO.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-075191a8.js", "version": "075191a8", "sri": void 0 };
+const serverManifest = { "entry": { "module": "/assets/entry.client-BmPErFKG.js", "imports": ["/assets/chunk-EPOLDU6W-QJC1U9FI.js", "/assets/index-rES-_S7A.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": true, "module": "/assets/root-Uj3bpB0b.js", "imports": ["/assets/chunk-EPOLDU6W-QJC1U9FI.js", "/assets/index-rES-_S7A.js", "/assets/index-PlS0Fw36.js", "/assets/utils-BQHNewu7.js"], "css": ["/assets/root-DMzQ5bR_.css"], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/home": { "id": "routes/home", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/home-CnWlUTqZ.js", "imports": ["/assets/chunk-EPOLDU6W-QJC1U9FI.js", "/assets/dashboard-layout-D6y2lGhw.js", "/assets/utils-BQHNewu7.js", "/assets/api-C0W-rHH-.js", "/assets/chevron-left-BW-hVQnn.js", "/assets/funnel-CK9ebP-4.js", "/assets/AreaChart-D05eSBAC.js", "/assets/auth-wrapper-DLd8jDi-.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/accounts": { "id": "routes/accounts", "parentId": "root", "path": "accounts", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/accounts-BMML2DU8.js", "imports": ["/assets/chunk-EPOLDU6W-QJC1U9FI.js", "/assets/dashboard-layout-D6y2lGhw.js", "/assets/input-UEbOl3vn.js", "/assets/plus-DQEUQthe.js", "/assets/search-B5wKFJP1.js", "/assets/funnel-CK9ebP-4.js", "/assets/ellipsis-vertical-CwyRWrqv.js", "/assets/utils-BQHNewu7.js", "/assets/api-C0W-rHH-.js", "/assets/chevron-left-BW-hVQnn.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/ui-layers": { "id": "routes/ui-layers", "parentId": "root", "path": "ui-layers", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/ui-layers-zw8fm0F4.js", "imports": ["/assets/chunk-EPOLDU6W-QJC1U9FI.js", "/assets/dashboard-layout-D6y2lGhw.js", "/assets/input-UEbOl3vn.js", "/assets/plus-DQEUQthe.js", "/assets/search-B5wKFJP1.js", "/assets/funnel-CK9ebP-4.js", "/assets/ellipsis-vertical-CwyRWrqv.js", "/assets/eye-UgHIgHI1.js", "/assets/code-DIuxYHmw.js", "/assets/chevron-left-BW-hVQnn.js", "/assets/utils-BQHNewu7.js", "/assets/api-C0W-rHH-.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/websites": { "id": "routes/websites", "parentId": "root", "path": "websites", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/websites-Dr2kFsbU.js", "imports": ["/assets/chunk-EPOLDU6W-QJC1U9FI.js", "/assets/dashboard-layout-D6y2lGhw.js", "/assets/input-UEbOl3vn.js", "/assets/api-C0W-rHH-.js", "/assets/index-PlS0Fw36.js", "/assets/plus-DQEUQthe.js", "/assets/search-B5wKFJP1.js", "/assets/external-link-BVjHeOvX.js", "/assets/eye-UgHIgHI1.js", "/assets/trash-2-CwsJ009A.js", "/assets/utils-BQHNewu7.js", "/assets/chevron-left-BW-hVQnn.js", "/assets/index-rES-_S7A.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/customizations": { "id": "routes/customizations", "parentId": "root", "path": "customizations", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/customizations-BL_tT8cC.js", "imports": ["/assets/chunk-EPOLDU6W-QJC1U9FI.js", "/assets/dashboard-layout-D6y2lGhw.js", "/assets/input-UEbOl3vn.js", "/assets/api-C0W-rHH-.js", "/assets/index-PlS0Fw36.js", "/assets/plus-DQEUQthe.js", "/assets/search-B5wKFJP1.js", "/assets/funnel-CK9ebP-4.js", "/assets/utils-BQHNewu7.js", "/assets/chevron-left-BW-hVQnn.js", "/assets/index-rES-_S7A.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/usage": { "id": "routes/usage", "parentId": "root", "path": "usage", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/usage-zG15CDBZ.js", "imports": ["/assets/chunk-EPOLDU6W-QJC1U9FI.js", "/assets/dashboard-layout-D6y2lGhw.js", "/assets/auth-wrapper-DLd8jDi-.js", "/assets/api-C0W-rHH-.js", "/assets/index-PlS0Fw36.js", "/assets/funnel-CK9ebP-4.js", "/assets/calendar-BCQmb4AH.js", "/assets/activity-_AQbO9UC.js", "/assets/chevron-left-BW-hVQnn.js", "/assets/eye-UgHIgHI1.js", "/assets/utils-BQHNewu7.js", "/assets/index-rES-_S7A.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/docs": { "id": "routes/docs", "parentId": "root", "path": "docs", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/docs-BJ5b2y_Q.js", "imports": ["/assets/chunk-EPOLDU6W-QJC1U9FI.js", "/assets/dashboard-layout-D6y2lGhw.js", "/assets/auth-wrapper-DLd8jDi-.js", "/assets/circle-check-big-CWs36lH1.js", "/assets/chevron-left-BW-hVQnn.js", "/assets/shield-CAEjOgjH.js", "/assets/external-link-BVjHeOvX.js", "/assets/code-DIuxYHmw.js", "/assets/zap-CW8uxiea.js", "/assets/utils-BQHNewu7.js", "/assets/api-C0W-rHH-.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api-usage": { "id": "routes/api-usage", "parentId": "root", "path": "api-usage", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/api-usage-Bm90D1XA.js", "imports": ["/assets/chunk-EPOLDU6W-QJC1U9FI.js", "/assets/dashboard-layout-D6y2lGhw.js", "/assets/activity-_AQbO9UC.js", "/assets/circle-check-big-CWs36lH1.js", "/assets/triangle-alert-B90UaC2K.js", "/assets/AreaChart-D05eSBAC.js", "/assets/utils-BQHNewu7.js", "/assets/api-C0W-rHH-.js", "/assets/chevron-left-BW-hVQnn.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/api-keys": { "id": "routes/api-keys", "parentId": "root", "path": "api-keys", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/api-keys-MTH44CnU.js", "imports": ["/assets/chunk-EPOLDU6W-QJC1U9FI.js", "/assets/index-rES-_S7A.js", "/assets/dashboard-layout-D6y2lGhw.js", "/assets/auth-wrapper-DLd8jDi-.js", "/assets/api-C0W-rHH-.js", "/assets/index-PlS0Fw36.js", "/assets/input-UEbOl3vn.js", "/assets/plus-DQEUQthe.js", "/assets/shield-CAEjOgjH.js", "/assets/utils-BQHNewu7.js", "/assets/chevron-left-BW-hVQnn.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/profile": { "id": "routes/profile", "parentId": "root", "path": "profile", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/profile-DU3EwVFD.js", "imports": ["/assets/chunk-EPOLDU6W-QJC1U9FI.js", "/assets/dashboard-layout-D6y2lGhw.js", "/assets/auth-wrapper-DLd8jDi-.js", "/assets/api-C0W-rHH-.js", "/assets/index-PlS0Fw36.js", "/assets/input-UEbOl3vn.js", "/assets/shield-CAEjOgjH.js", "/assets/circle-check-big-CWs36lH1.js", "/assets/chevron-left-BW-hVQnn.js", "/assets/calendar-BCQmb4AH.js", "/assets/mail-0tSQtOa_.js", "/assets/eye-off-CS9XMG0s.js", "/assets/eye-UgHIgHI1.js", "/assets/utils-BQHNewu7.js", "/assets/index-rES-_S7A.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/changelog": { "id": "routes/changelog", "parentId": "root", "path": "changelog", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/changelog-BrSs1BDL.js", "imports": ["/assets/chunk-EPOLDU6W-QJC1U9FI.js", "/assets/dashboard-layout-D6y2lGhw.js", "/assets/triangle-alert-B90UaC2K.js", "/assets/chevron-left-BW-hVQnn.js", "/assets/zap-CW8uxiea.js", "/assets/circle-check-big-CWs36lH1.js", "/assets/plus-DQEUQthe.js", "/assets/utils-BQHNewu7.js", "/assets/api-C0W-rHH-.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/settings": { "id": "routes/settings", "parentId": "root", "path": "settings", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/settings-CrTuiIzG.js", "imports": ["/assets/chunk-EPOLDU6W-QJC1U9FI.js", "/assets/dashboard-layout-D6y2lGhw.js", "/assets/input-UEbOl3vn.js", "/assets/shield-CAEjOgjH.js", "/assets/chevron-left-BW-hVQnn.js", "/assets/eye-off-CS9XMG0s.js", "/assets/eye-UgHIgHI1.js", "/assets/check-B9xNTrG_.js", "/assets/trash-2-CwsJ009A.js", "/assets/utils-BQHNewu7.js", "/assets/api-C0W-rHH-.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/login": { "id": "routes/login", "parentId": "root", "path": "login", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/login-CMTZ9yAv.js", "imports": ["/assets/chunk-EPOLDU6W-QJC1U9FI.js", "/assets/api-C0W-rHH-.js", "/assets/index-PlS0Fw36.js", "/assets/input-UEbOl3vn.js", "/assets/chevron-left-BW-hVQnn.js", "/assets/eye-off-CS9XMG0s.js", "/assets/eye-UgHIgHI1.js", "/assets/index-rES-_S7A.js", "/assets/utils-BQHNewu7.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/register": { "id": "routes/register", "parentId": "root", "path": "register", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/register-D-7EjFP8.js", "imports": ["/assets/chunk-EPOLDU6W-QJC1U9FI.js", "/assets/api-C0W-rHH-.js", "/assets/index-PlS0Fw36.js", "/assets/input-UEbOl3vn.js", "/assets/chevron-left-BW-hVQnn.js", "/assets/eye-off-CS9XMG0s.js", "/assets/eye-UgHIgHI1.js", "/assets/check-B9xNTrG_.js", "/assets/index-rES-_S7A.js", "/assets/utils-BQHNewu7.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/forgot-password": { "id": "routes/forgot-password", "parentId": "root", "path": "forgot-password", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/forgot-password-BYnrEPHD.js", "imports": ["/assets/chunk-EPOLDU6W-QJC1U9FI.js", "/assets/input-UEbOl3vn.js", "/assets/mail-0tSQtOa_.js", "/assets/chevron-left-BW-hVQnn.js", "/assets/arrow-left-Ck3w3f4v.js", "/assets/utils-BQHNewu7.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/reset-password": { "id": "routes/reset-password", "parentId": "root", "path": "reset-password", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/reset-password-By45Sfze.js", "imports": ["/assets/chunk-EPOLDU6W-QJC1U9FI.js", "/assets/input-UEbOl3vn.js", "/assets/check-B9xNTrG_.js", "/assets/chevron-left-BW-hVQnn.js", "/assets/eye-off-CS9XMG0s.js", "/assets/eye-UgHIgHI1.js", "/assets/arrow-left-Ck3w3f4v.js", "/assets/utils-BQHNewu7.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-4ba4efc9.js", "version": "4ba4efc9", "sri": void 0 };
 const assetsBuildDirectory = "build/client";
 const basename = "/";
 const future = { "unstable_optimizeDeps": false, "unstable_subResourceIntegrity": false, "unstable_trailingSlashAwareDataRequests": false, "v8_middleware": false, "v8_splitRouteModules": false, "v8_viteEnvironmentApi": false };
@@ -4422,13 +6380,37 @@ const routes = {
     caseSensitive: void 0,
     module: route3
   },
+  "routes/websites": {
+    id: "routes/websites",
+    parentId: "root",
+    path: "websites",
+    index: void 0,
+    caseSensitive: void 0,
+    module: route4
+  },
   "routes/customizations": {
     id: "routes/customizations",
     parentId: "root",
     path: "customizations",
     index: void 0,
     caseSensitive: void 0,
-    module: route4
+    module: route5
+  },
+  "routes/usage": {
+    id: "routes/usage",
+    parentId: "root",
+    path: "usage",
+    index: void 0,
+    caseSensitive: void 0,
+    module: route6
+  },
+  "routes/docs": {
+    id: "routes/docs",
+    parentId: "root",
+    path: "docs",
+    index: void 0,
+    caseSensitive: void 0,
+    module: route7
   },
   "routes/api-usage": {
     id: "routes/api-usage",
@@ -4436,7 +6418,7 @@ const routes = {
     path: "api-usage",
     index: void 0,
     caseSensitive: void 0,
-    module: route5
+    module: route8
   },
   "routes/api-keys": {
     id: "routes/api-keys",
@@ -4444,7 +6426,15 @@ const routes = {
     path: "api-keys",
     index: void 0,
     caseSensitive: void 0,
-    module: route6
+    module: route9
+  },
+  "routes/profile": {
+    id: "routes/profile",
+    parentId: "root",
+    path: "profile",
+    index: void 0,
+    caseSensitive: void 0,
+    module: route10
   },
   "routes/changelog": {
     id: "routes/changelog",
@@ -4452,7 +6442,7 @@ const routes = {
     path: "changelog",
     index: void 0,
     caseSensitive: void 0,
-    module: route7
+    module: route11
   },
   "routes/settings": {
     id: "routes/settings",
@@ -4460,7 +6450,7 @@ const routes = {
     path: "settings",
     index: void 0,
     caseSensitive: void 0,
-    module: route8
+    module: route12
   },
   "routes/login": {
     id: "routes/login",
@@ -4468,7 +6458,7 @@ const routes = {
     path: "login",
     index: void 0,
     caseSensitive: void 0,
-    module: route9
+    module: route13
   },
   "routes/register": {
     id: "routes/register",
@@ -4476,7 +6466,7 @@ const routes = {
     path: "register",
     index: void 0,
     caseSensitive: void 0,
-    module: route10
+    module: route14
   },
   "routes/forgot-password": {
     id: "routes/forgot-password",
@@ -4484,7 +6474,7 @@ const routes = {
     path: "forgot-password",
     index: void 0,
     caseSensitive: void 0,
-    module: route11
+    module: route15
   },
   "routes/reset-password": {
     id: "routes/reset-password",
@@ -4492,7 +6482,7 @@ const routes = {
     path: "reset-password",
     index: void 0,
     caseSensitive: void 0,
-    module: route12
+    module: route16
   }
 };
 const allowedActionOrigins = false;

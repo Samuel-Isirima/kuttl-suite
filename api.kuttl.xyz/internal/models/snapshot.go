@@ -27,8 +27,9 @@ type WebsiteSnapshot struct {
 	Metadata    SnapshotMetadata       `json:"metadata" db:"metadata"`
 	
 	// Prompt tracking (new fields)
-	PromptID    *uuid.UUID             `json:"prompt_id,omitempty" db:"prompt_id"`
-	TriggerType string                 `json:"trigger_type" db:"trigger_type"`
+	PromptID           *uuid.UUID `json:"prompt_id,omitempty" db:"prompt_id"`
+	TriggerType        string     `json:"trigger_type" db:"trigger_type"`
+	BrowserFingerprint string     `json:"browser_fingerprint" db:"browser_fingerprint"`
 	
 	CreatedAt   time.Time              `json:"created_at" db:"created_at"`
 	UpdatedAt   time.Time              `json:"updated_at" db:"updated_at"`

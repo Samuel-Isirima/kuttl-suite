@@ -21,6 +21,12 @@ type AuthResponse struct {
 	Token string `json:"token"`
 }
 
+// ProfileUpdateRequest represents a profile update request
+type ProfileUpdateRequest struct {
+	Name  string `json:"name" validate:"required,min=2,max=100"`
+	Email string `json:"email" validate:"required,email"`
+}
+
 // PasswordChangeRequest represents a password change request
 type PasswordChangeRequest struct {
 	CurrentPassword string `json:"current_password" validate:"required"`

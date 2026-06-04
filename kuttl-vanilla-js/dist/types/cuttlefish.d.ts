@@ -3,7 +3,7 @@
  *
  * Developer usage:
  *
- *   <script src="cuttlefish.iife"></script>
+ *   <script src="cuttlefish.iife.js" data-website-key="your_hash_key"></script>
  *   <script>
  *     Cuttlefish.init({
  *       provider: 'anthropic',

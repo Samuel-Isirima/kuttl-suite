@@ -160,7 +160,7 @@ export default function Changelog() {
             return (
               <div 
                 key={entry.id} 
-                className={`bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-md transition-shadow ${config.bgColor} ${config.borderColor}`}
+                className={`bg-white rounded-lg border border-gray-200 overflow-hidden hover:-md transition- ${config.bgColor} ${config.borderColor}`}
               >
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-4">

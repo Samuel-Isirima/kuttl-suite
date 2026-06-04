@@ -56,7 +56,7 @@ export function MetricsGrid() {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="bg-white p-4 lg:p-6 rounded-lg border border-gray-200 shadow-sm animate-pulse">
+          <div key={i} className="bg-white p-4 lg:p-6 rounded-lg border border-gray-200  animate-pulse">
             <div className="h-4 bg-gray-200 rounded w-1/2 mb-4"></div>
             <div className="h-8 bg-gray-200 rounded w-1/3 mb-2"></div>
             <div className="h-3 bg-gray-200 rounded w-1/4"></div>
@@ -68,7 +68,7 @@ export function MetricsGrid() {
 
   if (!metrics) {
     return (
-      <div className="bg-white p-8 rounded-lg border border-gray-200 shadow-sm text-center">
+      <div className="bg-white p-8 rounded-lg border border-gray-200  text-center">
         <p className="text-gray-500">Failed to load metrics</p>
       </div>
     );
@@ -76,7 +76,7 @@ export function MetricsGrid() {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6">
       {/* Total Websites Card */}
-      <div className="bg-white p-4 lg:p-6 rounded-lg border border-gray-200 shadow-sm md:col-span-2 xl:col-span-1">
+      <div className="bg-white p-4 lg:p-6 rounded-lg border border-gray-200  md:col-span-2 xl:col-span-1">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-medium text-gray-500">
             Total Websites
@@ -103,7 +103,7 @@ export function MetricsGrid() {
       </div>
 
       {/* API Requests Card */}
-      <div className="bg-white p-4 lg:p-6 rounded-lg border border-gray-200 shadow-sm">
+      <div className="bg-white p-4 lg:p-6 rounded-lg border border-gray-200 ">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-medium text-gray-500">
             API Requests
@@ -140,7 +140,7 @@ export function MetricsGrid() {
       </div>
 
       {/* UI Customizations Card */}
-      <div className="bg-white p-4 lg:p-6 rounded-lg border border-gray-200 shadow-sm">
+      <div className="bg-white p-4 lg:p-6 rounded-lg border border-gray-200 ">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-medium text-gray-500">
             UI Customizations

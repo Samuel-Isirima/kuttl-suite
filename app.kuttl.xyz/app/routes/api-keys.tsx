@@ -5,6 +5,7 @@ import { AuthWrapper } from "../components/auth-wrapper";
 import { apiKeysApi } from "../lib/api";
 import { toast } from "sonner";
 import { Copy, Trash2, Key, Plus, Eye, EyeOff, Shield } from "lucide-react";
+import { Input } from "../components/ui/input";
 
 interface APIToken {
   id: string;
@@ -179,7 +180,7 @@ export default function APIKeys() {
             </div>
             <button
               onClick={() => setShowCreateModal(true)}
-              className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              className="inline-flex items-center px-4 py-3 border border-transparent rounded-lg  text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             >
               <Plus className="w-4 h-4 mr-2" />
               Create New Token
@@ -296,7 +297,7 @@ export default function APIKeys() {
                         {token.is_active && !isExpired(token.expires_at) && (
                           <button
                             onClick={() => handleDisableClick(token.id, token.name)}
-                            className="inline-flex items-center px-3 py-2 text-sm font-medium text-xs text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
+                            className="inline-flex items-center px-3 py-3 text-sm font-medium text-xs text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
                             title="Disable token"
                           >
                             <Shield className="w-4 h-4 mr-1" />
@@ -349,7 +350,7 @@ export default function APIKeys() {
             {/* Modal Container */}
             <div className="relative w-full max-w-lg">
               {/* Modal */}
-              <div className="relative bg-white rounded-2xl shadow-2xl">
+              <div className="relative bg-white rounded-2xl -2xl">
                 {!newToken ? (
                   // Create Token Form
                   <div className="p-8">
@@ -386,14 +387,13 @@ export default function APIKeys() {
                         <label htmlFor="modal-name" className="block text-sm font-medium text-gray-700 mb-2">
                           Token Name *
                         </label>
-                        <input
+                        <Input
                           type="text"
                           id="modal-name"
                           value={formData.name}
                           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                           placeholder="e.g., My Website Integration"
                           required
-                          className="block w-full rounded-lg border-gray-300 border px-3 py-3 text-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-blue-500"
                         />
                       </div>
 
@@ -401,13 +401,12 @@ export default function APIKeys() {
                         <label htmlFor="modal-expires" className="block text-sm font-medium text-gray-700 mb-2">
                           Expiration Date (optional)
                         </label>
-                        <input
+                        <Input
                           type="date"
                           id="modal-expires"
                           value={formData.expires_at}
                           min={new Date(new Date().getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
                           onChange={(e) => setFormData({ ...formData, expires_at: e.target.value })}
-                          className="block w-full rounded-lg border-gray-300 border px-3 py-3 text-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-blue-500"
                         />
                         <p className="mt-1 text-xs text-gray-500">
                           Leave empty for tokens that never expire. Must be at least tomorrow.
@@ -421,14 +420,14 @@ export default function APIKeys() {
                             setShowCreateModal(false);
                             setFormData({ name: "", expires_at: "" });
                           }}
-                          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                          className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
                         >
                           Cancel
                         </button>
                         <button
                           type="submit"
                           disabled={creating}
-                          className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
                           {creating ? "Creating..." : "Create Token"}
                         </button>
@@ -479,7 +478,7 @@ export default function APIKeys() {
                         </div>
                         <button
                           onClick={() => copyToClipboard(newToken.token, "API token")}
-                          className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg border transition-colors"
+                          className="px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg border transition-colors"
                         >
                           Copy
                         </button>
@@ -491,7 +490,7 @@ export default function APIKeys() {
                           setShowCreateModal(false);
                           setFormData({ name: "", expires_at: "" });
                         }}
-                        className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                       >
                         Done
                       </button>
@@ -519,7 +518,7 @@ export default function APIKeys() {
             {/* Modal Container */}
             <div className="relative w-full max-w-md">
               {/* Modal */}
-              <div className="relative bg-white rounded-2xl shadow-2xl p-6">
+              <div className="relative bg-white rounded-2xl -2xl p-6">
                 {/* Header */}
                 <div className="flex items-center space-x-4 mb-6">
                   <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
@@ -554,14 +553,14 @@ export default function APIKeys() {
                       setShowDisableModal(false);
                       setTokenToDisable(null);
                     }}
-                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="button"
                     onClick={handleDisableConfirm}
-                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                    className="flex-1 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
                   >
                     Disable Token
                   </button>

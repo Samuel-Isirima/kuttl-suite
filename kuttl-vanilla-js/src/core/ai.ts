@@ -12,8 +12,9 @@ import type {
   SelectedElement,
   Patch,
 } from "../types/index";
+import { getFingerprint } from "./fingerprint";
 
-const PROXY_URL = "http://localhost:8080/api/prompt";
+const DEFAULT_API_BASE = "http://localhost:8080";
 
 interface ProxyRequest {
   prompt:    string;
@@ -66,7 +67,8 @@ function findNodesWithLayoutContext(node: InterceptNode): any[] {
   return result;
 }
 
-export function createAILayer(): AILayerHandle {
+export function createAILayer(websiteKey?: string, apiBaseUrl?: string): AILayerHandle {
+  const proxyUrl = `${(apiBaseUrl ?? DEFAULT_API_BASE).replace(/\/$/, '')}/api/prompt`;
   return {
     async prompt(userPrompt, workingTree, descAttr, selection, websiteId) {
       // Log the tree being sent to AI to check if it has layout context
@@ -87,11 +89,17 @@ export function createAILayer(): AILayerHandle {
         websiteId,
       };
 
+      const reqHeaders: Record<string, string> = {
+        "Content-Type": "application/json",
+        "X-Browser-Fingerprint": getFingerprint(),
+      };
+      if (websiteKey) reqHeaders["X-Website-Key"] = websiteKey;
+
       let response: Response;
       try {
-        response = await fetch(PROXY_URL, {
+        response = await fetch(proxyUrl, {
           method:  "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: reqHeaders,
           body:    JSON.stringify(body),
         });
       } catch (err) {

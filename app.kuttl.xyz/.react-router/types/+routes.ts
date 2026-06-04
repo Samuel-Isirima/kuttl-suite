@@ -20,16 +20,25 @@ type Pages = {
   "/ui-layers": {
     params: {};
   };
+  "/websites": {
+    params: {};
+  };
   "/customizations": {
     params: {};
   };
   "/usage": {
     params: {};
   };
+  "/docs": {
+    params: {};
+  };
   "/api-usage": {
     params: {};
   };
   "/api-keys": {
+    params: {};
+  };
+  "/profile": {
     params: {};
   };
   "/changelog": {
@@ -55,7 +64,7 @@ type Pages = {
 type RouteFiles = {
   "root.tsx": {
     id: "root";
-    page: "/" | "/accounts" | "/ui-layers" | "/customizations" | "/usage" | "/api-usage" | "/api-keys" | "/changelog" | "/settings" | "/login" | "/register" | "/forgot-password" | "/reset-password";
+    page: "/" | "/accounts" | "/ui-layers" | "/websites" | "/customizations" | "/usage" | "/docs" | "/api-usage" | "/api-keys" | "/profile" | "/changelog" | "/settings" | "/login" | "/register" | "/forgot-password" | "/reset-password";
   };
   "routes/home.tsx": {
     id: "routes/home";
@@ -69,6 +78,10 @@ type RouteFiles = {
     id: "routes/ui-layers";
     page: "/ui-layers";
   };
+  "routes/websites.tsx": {
+    id: "routes/websites";
+    page: "/websites";
+  };
   "routes/customizations.tsx": {
     id: "routes/customizations";
     page: "/customizations";
@@ -77,6 +90,10 @@ type RouteFiles = {
     id: "routes/usage";
     page: "/usage";
   };
+  "routes/docs.tsx": {
+    id: "routes/docs";
+    page: "/docs";
+  };
   "routes/api-usage.tsx": {
     id: "routes/api-usage";
     page: "/api-usage";
@@ -84,6 +101,10 @@ type RouteFiles = {
   "routes/api-keys.tsx": {
     id: "routes/api-keys";
     page: "/api-keys";
+  };
+  "routes/profile.tsx": {
+    id: "routes/profile";
+    page: "/profile";
   };
   "routes/changelog.tsx": {
     id: "routes/changelog";
@@ -116,10 +137,13 @@ type RouteModules = {
   "routes/home": typeof import("./app/routes/home.tsx");
   "routes/accounts": typeof import("./app/routes/accounts.tsx");
   "routes/ui-layers": typeof import("./app/routes/ui-layers.tsx");
+  "routes/websites": typeof import("./app/routes/websites.tsx");
   "routes/customizations": typeof import("./app/routes/customizations.tsx");
   "routes/usage": typeof import("./app/routes/usage.tsx");
+  "routes/docs": typeof import("./app/routes/docs.tsx");
   "routes/api-usage": typeof import("./app/routes/api-usage.tsx");
   "routes/api-keys": typeof import("./app/routes/api-keys.tsx");
+  "routes/profile": typeof import("./app/routes/profile.tsx");
   "routes/changelog": typeof import("./app/routes/changelog.tsx");
   "routes/settings": typeof import("./app/routes/settings.tsx");
   "routes/login": typeof import("./app/routes/login.tsx");

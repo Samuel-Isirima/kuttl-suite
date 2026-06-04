@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"api.kuttl.xyz/internal/database"
+	"api.kuttl.xyz/internal/middleware"
 	"api.kuttl.xyz/internal/models"
 	"api.kuttl.xyz/internal/services"
 )
@@ -44,6 +45,8 @@ func (h *SnapshotHandler) CreateSnapshot(w http.ResponseWriter, r *http.Request)
 		// For development, use consistent development user ID
 		userID = uuid.MustParse("d5f3bdc2-65aa-4dd6-bf2b-0e05a6192402")
 	}
+
+	fingerprint := middleware.GetFingerprintFromContext(r.Context())
 	
 	// Ensure user exists - create if not found
 	if err := h.snapshots.EnsureUserExists(userID); err != nil {
@@ -116,17 +119,18 @@ func (h *SnapshotHandler) CreateSnapshot(w http.ResponseWriter, r *http.Request)
 
 	// Create new snapshot data
 	newSnapshot := &models.WebsiteSnapshot{
-		WebsiteID:      req.WebsiteID,
-		UserID:         userID,
-		SessionID:      req.SessionID,
-		Version:        req.Version,
-		Components:     req.Components,
-		Styles:         req.Styles,
-		Layout:         req.Layout,
-		Customizations: req.Customizations,
-		Metadata:       req.Metadata,
-		PromptID:       promptID,
-		TriggerType:    req.TriggerType,
+		WebsiteID:          req.WebsiteID,
+		UserID:             userID,
+		SessionID:          req.SessionID,
+		Version:            req.Version,
+		Components:         req.Components,
+		Styles:             req.Styles,
+		Layout:             req.Layout,
+		Customizations:     req.Customizations,
+		Metadata:           req.Metadata,
+		PromptID:           promptID,
+		TriggerType:        req.TriggerType,
+		BrowserFingerprint: fingerprint,
 	}
 
 	// Check for duplicate content

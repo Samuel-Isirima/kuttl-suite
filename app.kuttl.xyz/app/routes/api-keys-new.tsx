@@ -3,6 +3,7 @@ import { Plus, Copy, Eye, EyeOff, Trash2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { apiKeysApi } from "~/lib/api";
 import { toast } from "sonner";
+import { Input } from "~/components/ui/input";
 
 interface ApiKey {
   id: string;
@@ -115,7 +116,7 @@ export default function APIKeys() {
           </div>
           <button 
             onClick={() => setShowCreateModal(true)}
-            className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium flex items-center space-x-2"
+            className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-3 rounded-lg text-sm font-medium flex items-center space-x-2"
           >
             <Plus className="w-4 h-4" />
             <span>Create New Key</span>
@@ -123,7 +124,7 @@ export default function APIKeys() {
         </div>
 
         {/* API Keys List */}
-        <div className="bg-white shadow rounded-lg">
+        <div className="bg-white  rounded-lg">
           <div className="px-6 py-4 border-b border-gray-200">
             <h2 className="text-lg font-medium text-gray-900">Your API Keys</h2>
           </div>
@@ -194,7 +195,7 @@ export default function APIKeys() {
         {/* Create API Key Modal */}
         {showCreateModal && (
           <div className="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="bg-white rounded-lg -xl max-w-md w-full">
               <div className="p-6">
                 <h3 className="text-lg font-medium text-gray-900 mb-4">
                   Create New API Key
@@ -205,11 +206,10 @@ export default function APIKeys() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Key Name
                     </label>
-                    <input
+                    <Input
                       type="text"
                       value={createForm.name}
                       onChange={(e) => setCreateForm(prev => ({ ...prev, name: e.target.value }))}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
                       placeholder="e.g., Production API, Mobile App"
                       required
                     />
@@ -219,11 +219,10 @@ export default function APIKeys() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Expiration Date (Optional)
                     </label>
-                    <input
+                    <Input
                       type="date"
                       value={createForm.expires_at}
                       onChange={(e) => setCreateForm(prev => ({ ...prev, expires_at: e.target.value }))}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
                     />
                   </div>
                   
@@ -231,13 +230,13 @@ export default function APIKeys() {
                     <button
                       type="button"
                       onClick={() => setShowCreateModal(false)}
-                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                      className="px-4 py-3 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
-                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700"
+                      className="px-4 py-3 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-lg hover:bg-blue-700"
                     >
                       Create Key
                     </button>
@@ -251,7 +250,7 @@ export default function APIKeys() {
         {/* Created Token Modal */}
         {createdToken && (
           <div className="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="bg-white rounded-lg -xl max-w-md w-full">
               <div className="p-6">
                 <h3 className="text-lg font-medium text-gray-900 mb-4">
                   API Key Created
@@ -270,7 +269,7 @@ export default function APIKeys() {
                 <div className="flex justify-end space-x-3">
                   <button
                     onClick={() => copyToClipboard(createdToken)}
-                    className="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100"
+                    className="px-4 py-3 text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100"
                   >
                     Copy Key
                   </button>
@@ -279,7 +278,7 @@ export default function APIKeys() {
                       setCreatedToken(null);
                       setShowCreateModal(false);
                     }}
-                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700"
+                    className="px-4 py-3 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-lg hover:bg-blue-700"
                   >
                     Done
                   </button>

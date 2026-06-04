@@ -3,10 +3,12 @@
 // ─────────────────────────────────────────────
 
 import type { WebsiteSnapshot, SnapshotDiff } from "../types/serialization";
+import { getFingerprint } from "./fingerprint";
 
 export interface APIConfig {
   baseUrl: string;
   apiKey?: string;
+  websiteKey?: string;
   timeout?: number;
 }
 
@@ -29,6 +31,7 @@ export class SnapshotAPI {
     this.config = {
       baseUrl: config.baseUrl.replace(/\/$/, ''), // Remove trailing slash
       apiKey: config.apiKey || '',
+      websiteKey: config.websiteKey || '',
       timeout: config.timeout || 10000,
     };
   }
@@ -154,10 +157,16 @@ export class SnapshotAPI {
     
     const headers = new Headers(options.headers);
     headers.set('Content-Type', 'application/json');
-    
+
     if (this.config.apiKey) {
       headers.set('Authorization', `Bearer ${this.config.apiKey}`);
     }
+
+    if (this.config.websiteKey) {
+      headers.set('X-Website-Key', this.config.websiteKey);
+    }
+
+    headers.set('X-Browser-Fingerprint', getFingerprint());
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);

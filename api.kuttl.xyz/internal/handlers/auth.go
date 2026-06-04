@@ -3,9 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
-	"strings"
 	"time"
 
 	"api.kuttl.xyz/internal/auth"
@@ -75,35 +73,6 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// getClientIP extracts the real client IP from request headers
-func getClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header (most common for proxies/load balancers)
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// X-Forwarded-For can contain multiple IPs, take the first one
-		if idx := strings.Index(xff, ","); idx != -1 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
-	}
-	
-	// Check X-Real-IP header (nginx)
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
-	}
-	
-	// Check CF-Connecting-IP header (Cloudflare)
-	if cfip := r.Header.Get("CF-Connecting-IP"); cfip != "" {
-		return strings.TrimSpace(cfip)
-	}
-	
-	// Fallback to RemoteAddr
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return ip
-}
-
 // Login handles user authentication
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req models.LoginRequest
@@ -144,6 +113,47 @@ func (h *AuthHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.Success(w, user)
+}
+
+// UpdateProfile updates user profile information
+func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	user := middleware.GetUserFromContext(r.Context())
+	if user == nil {
+		response.Unauthorized(w, "Authentication required")
+		return
+	}
+
+	var req models.ProfileUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.BadRequest(w, "Invalid request body")
+		return
+	}
+
+	// Basic validation
+	if req.Name == "" {
+		response.BadRequest(w, "Name is required")
+		return
+	}
+
+	if req.Email == "" {
+		response.BadRequest(w, "Email is required")
+		return
+	}
+
+	updatedUser, err := h.authService.UpdateProfile(user.ID, &req)
+	if err != nil {
+		if err.Error() == "user with this email already exists" {
+			response.BadRequest(w, "Email is already in use")
+			return
+		}
+		response.InternalError(w, "Failed to update profile")
+		return
+	}
+
+	response.Success(w, map[string]interface{}{
+		"user":    updatedUser,
+		"message": "Profile updated successfully",
+	})
 }
 
 // CreateAPIToken creates a new API token for the authenticated user

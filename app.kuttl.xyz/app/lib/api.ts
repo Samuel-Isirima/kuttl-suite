@@ -152,6 +152,95 @@ export const dashboardApi = {
       component_count: number;
       customization_count: number;
     }>>();
+  },
+
+  getAnalyticsData: async () => {
+    return api.get('dashboard/analytics').json<Array<{
+      name: string;
+      value: number;
+      requests: number;
+      month: string;
+    }>>();
+  },
+
+  getUsageData: async () => {
+    return api.get('dashboard/usage').json<Array<{
+      name: string;
+      value: number;
+      color: string;
+    }>>();
+  },
+
+  getCustomizationsByPlan: async () => {
+    return api.get('dashboard/customizations-by-plan').json<{
+      total: number;
+      growth: number;
+      premium: {
+        count: number;
+        percentage: number;
+      };
+      free: {
+        count: number;
+        percentage: number;
+      };
+    }>();
+  }
+};
+
+// Customizations API
+export const customizationsApi = {
+  list: async (params?: { limit?: number; offset?: number; status?: string; type?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.limit) searchParams.set('limit', params.limit.toString());
+    if (params?.offset) searchParams.set('offset', params.offset.toString());
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.type) searchParams.set('type', params.type);
+    
+    const response = await api.get(`customizations?${searchParams}`).json<{
+      success: boolean;
+      data: Array<{
+        id: string;
+        user_id: string;
+        website_url: string;
+        user_request: string;
+        change_description: string;
+        element_targeted: string;
+        modification_type: string;
+        status: string;
+        applied_at: string | null;
+        created_at: string;
+        prompt_id?: string;
+        snapshot_id?: string;
+      }>;
+    }>();
+    return response.data;
+  },
+
+  getStats: async () => {
+    const response = await api.get('customizations/stats').json<{
+      success: boolean;
+      data: {
+        total_changes: number;
+        success_rate: number;
+        pending_changes: number;
+        avg_apply_time: number;
+      };
+    }>();
+    return response.data;
+  },
+
+  create: async (data: {
+    website_url: string;
+    user_request: string;
+    change_description: string;
+    element_targeted: string;
+    modification_type: string;
+  }) => {
+    const response = await api.post('customizations', { json: data }).json<{
+      success: boolean;
+      data: { id: string };
+    }>();
+    return response.data;
   }
 };
 
@@ -192,6 +281,81 @@ export const apiKeysApi = {
     return api.delete(`auth/tokens/${tokenId}`).json<{
       message: string;
     }>();
+  }
+};
+
+// Websites API
+export const websitesApi = {
+  list: async () => {
+    const response = await api.get('websites').json<{
+      success: boolean;
+      data: Array<{
+        id: string;
+        user_id: string;
+        name: string;
+        url: string;
+        description?: string;
+        hash_key: string;
+        is_active: boolean;
+        created_at: string;
+        updated_at: string;
+        last_request_at?: string;
+        total_requests: number;
+      }>;
+    }>();
+    return response.data;
+  },
+
+  create: async (data: {
+    name: string;
+    url: string;
+    description?: string;
+  }) => {
+    const response = await api.post('websites', { json: data }).json<{
+      success: boolean;
+      data: {
+        id: string;
+        user_id: string;
+        name: string;
+        url: string;
+        description?: string;
+        hash_key: string;
+        is_active: boolean;
+        created_at: string;
+        updated_at: string;
+        total_requests: number;
+      };
+    }>();
+    return response.data;
+  },
+
+  get: async (id: string) => {
+    const response = await api.get(`websites/${id}`).json<{
+      success: boolean;
+      data: any;
+    }>();
+    return response.data;
+  },
+
+  update: async (id: string, data: {
+    name?: string;
+    url?: string;
+    description?: string;
+    is_active?: boolean;
+  }) => {
+    const response = await api.put(`websites/${id}`, { json: data }).json<{
+      success: boolean;
+      message: string;
+    }>();
+    return response;
+  },
+
+  delete: async (id: string) => {
+    const response = await api.delete(`websites/${id}`).json<{
+      success: boolean;
+      message: string;
+    }>();
+    return response;
   }
 };
 

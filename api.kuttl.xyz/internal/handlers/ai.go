@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,7 +13,9 @@ import (
 	"time"
 
 	"api.kuttl.xyz/internal/database"
+	"api.kuttl.xyz/internal/middleware"
 	"api.kuttl.xyz/internal/models"
+	"api.kuttl.xyz/internal/usage"
 	"github.com/google/uuid"
 )
 
@@ -25,13 +28,10 @@ type AIHandler struct {
 	embeddings *database.EmbeddingRepository
 	snapshots  *database.SnapshotRepository
 	config     *AIConfig
-	usage      UsageService // Interface for usage logging
+	usage      *usage.Service
+	db         *sql.DB
 }
 
-// UsageService interface for logging API calls
-type UsageService interface {
-	LogAPICall(call *models.APICall) error
-}
 
 type AIConfig struct {
 	Provider   string
@@ -41,13 +41,14 @@ type AIConfig struct {
 	Timeout    time.Duration
 }
 
-func NewAIHandler(prompts *database.PromptRepository, embeddings *database.EmbeddingRepository, snapshots *database.SnapshotRepository, config *AIConfig, usage UsageService) *AIHandler {
+func NewAIHandler(prompts *database.PromptRepository, embeddings *database.EmbeddingRepository, snapshots *database.SnapshotRepository, config *AIConfig, usage *usage.Service, db *sql.DB) *AIHandler {
 	return &AIHandler{
 		prompts:    prompts,
 		embeddings: embeddings,
 		snapshots:  snapshots,
 		config:     config,
 		usage:      usage,
+		db:         db,
 	}
 }
 
@@ -89,22 +90,37 @@ func (h *AIHandler) HandlePrompt(w http.ResponseWriter, r *http.Request) {
 	
 	startTime := time.Now()
 
-	userID, ok := r.Context().Value("user_id").(uuid.UUID)
-	if !ok {
-		// For development, use consistent development user ID
-		userID = uuid.MustParse("d5f3bdc2-65aa-4dd6-bf2b-0e05a6192402")
-	}
-
-	// Get API key ID from context (set by auth middleware)
+	var userID uuid.UUID
+	var websiteID string
 	var apiKeyID uuid.UUID
-	if apiKeyIDStr, ok := r.Context().Value("api_key_id").(string); ok {
-		if parsed, err := uuid.Parse(apiKeyIDStr); err == nil {
-			apiKeyID = parsed
+	
+	// Try to get website from context first (new website hash key approach)
+	if website := middleware.GetWebsiteFromContext(r.Context()); website != nil {
+		websiteID = website.ID
+		if parsed, err := uuid.Parse(website.UserID); err == nil {
+			userID = parsed
 		}
-	}
-	if apiKeyID == uuid.Nil {
-		// Default for development
-		apiKeyID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
+		// For website-based requests, we'll use a special "website" api key ID
+		apiKeyID = uuid.MustParse("00000000-0000-0000-0000-000000000001") // Special ID for website requests
+	} else {
+		// Fallback to user context (for authenticated dashboard users)
+		if userIDFromCtx, ok := r.Context().Value("user_id").(uuid.UUID); ok {
+			userID = userIDFromCtx
+		} else {
+			// For development, use consistent development user ID
+			userID = uuid.MustParse("d5f3bdc2-65aa-4dd6-bf2b-0e05a6192402")
+		}
+
+		// Get API key ID from context (set by auth middleware)
+		if apiKeyIDStr, ok := r.Context().Value("api_key_id").(string); ok {
+			if parsed, err := uuid.Parse(apiKeyIDStr); err == nil {
+				apiKeyID = parsed
+			}
+		}
+		if apiKeyID == uuid.Nil {
+			// Default for development
+			apiKeyID = uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
+		}
 	}
 
 	var req AIPromptRequest
@@ -119,7 +135,12 @@ func (h *AIHandler) HandlePrompt(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Retrieve existing embeddings for context
-	embeddingContext, err := h.getEmbeddingContext(ctx, req.WebsiteID, userID)
+	// Use website ID from context if available, otherwise fall back to request
+	contextWebsiteID := websiteID
+	if contextWebsiteID == "" {
+		contextWebsiteID = req.WebsiteID
+	}
+	embeddingContext, err := h.getEmbeddingContext(ctx, contextWebsiteID, userID)
 	if err != nil {
 		// Log error but don't fail the request
 		fmt.Printf("Warning: Failed to retrieve embedding context: %v\n", err)
@@ -166,6 +187,11 @@ func (h *AIHandler) HandlePrompt(w http.ResponseWriter, r *http.Request) {
 
 	// Store prompt for future context building
 	go h.storePromptAsync(userID, req, parsedResponse)
+
+	// Write a customization record when patches were produced
+	if len(parsedResponse.Patches) > 0 {
+		go h.createCustomizationRecord(req, parsedResponse, r)
+	}
 
 	// Log the API call with prompt information
 	go h.logPromptAPICall(userID, apiKeyID, req, parsedResponse, r, startTime)
@@ -817,6 +843,102 @@ func (h *AIHandler) createDiffAnalysis(ctx context.Context, userID uuid.UUID, re
 }
 
 // ─────────────────────────────────────────────
+// Customization Record Creation
+// ─────────────────────────────────────────────
+
+func (h *AIHandler) createCustomizationRecord(req AIPromptRequest, resp AIPromptResponse, r *http.Request) {
+	if h.db == nil {
+		return
+	}
+
+	fingerprint := middleware.GetFingerprintFromContext(r.Context())
+	if fingerprint == "" {
+		return
+	}
+
+	website := middleware.GetWebsiteFromContext(r.Context())
+
+	websiteURL := r.Header.Get("Referer")
+	if websiteURL == "" {
+		websiteURL = req.WebsiteID
+	}
+	var websiteID *string
+	if website != nil {
+		websiteID = &website.ID
+		if websiteURL == "" {
+			websiteURL = website.URL
+		}
+	}
+
+	// Determine modification type from patch operations
+	modType := inferModificationType(resp.Patches)
+
+	// Build a short description from patch count
+	description := fmt.Sprintf("%d patch(es) applied by AI in response to: %s", len(resp.Patches), truncate(req.Prompt, 120))
+
+	// Determine element targeted
+	elementTargeted := extractFirstTarget(resp.Patches)
+
+	_, err := h.db.Exec(`
+		INSERT INTO website_customizations
+		(id, browser_fingerprint, website_id, website_url, user_request, change_description,
+		 element_targeted, modification_type, status, applied_at, created_at)
+		VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, 'Applied', NOW(), NOW())
+	`, fingerprint, websiteID, websiteURL, truncate(req.Prompt, 500), description, elementTargeted, modType)
+
+	if err != nil {
+		fmt.Printf("Warning: failed to create customization record: %v\n", err)
+	}
+}
+
+func inferModificationType(patches []json.RawMessage) string {
+	for _, p := range patches {
+		var patch map[string]interface{}
+		if err := json.Unmarshal(p, &patch); err != nil {
+			continue
+		}
+		op, _ := patch["op"].(string)
+		switch op {
+		case "restyle":
+			return "Style & Content"
+		case "hide", "show":
+			return "Layout & Responsive"
+		case "setText":
+			return "Content Update"
+		case "addClass", "removeClass":
+			return "Style & Content"
+		case "move", "reorder":
+			return "Layout & Responsive"
+		}
+	}
+	return "Style & Content"
+}
+
+func extractFirstTarget(patches []json.RawMessage) string {
+	if len(patches) == 0 {
+		return "unknown"
+	}
+	var patch map[string]interface{}
+	if err := json.Unmarshal(patches[0], &patch); err != nil {
+		return "unknown"
+	}
+	if target, ok := patch["target"].(string); ok && target != "" {
+		if len(patches) > 1 {
+			return fmt.Sprintf("%s (+%d more)", target, len(patches)-1)
+		}
+		return target
+	}
+	return "unknown"
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
+}
+
+// ─────────────────────────────────────────────
 // API Call Logging for Prompts
 // ─────────────────────────────────────────────
 
@@ -852,7 +974,7 @@ func (h *AIHandler) logPromptAPICall(userID, apiKeyID uuid.UUID, req AIPromptReq
 		UserID:            userID,
 		APIKeyID:          apiKeyID,
 		IPAddress:         getClientIP(r),
-		Domain:            extractDomain(r.Header.Get("Referer"), r.Host),
+		Domain:            extractDomainFromReferrer(r.Header.Get("Referer"), r.Host),
 		Referrer:          r.Header.Get("Referer"),
 		Action:            "prompt",
 		Endpoint:          r.URL.Path,
@@ -860,7 +982,7 @@ func (h *AIHandler) logPromptAPICall(userID, apiKeyID uuid.UUID, req AIPromptReq
 		StatusCode:        statusCode,
 		ResponseTimeMS:    responseTime,
 		UserAgent:         r.Header.Get("User-Agent"),
-		DeviceType:        parseDeviceType(r.Header.Get("User-Agent")),
+		DeviceType:        parseUserAgentDeviceType(r.Header.Get("User-Agent")),
 		BrowserFingerprint: fingerprint,
 		PromptText:        &promptText,
 		PromptResponse:    &promptResponse,
@@ -897,4 +1019,37 @@ func getClientIP(r *http.Request) string {
 	}
 	
 	return r.RemoteAddr
+}
+
+// extractDomainFromReferrer extracts domain from referrer or host header
+func extractDomainFromReferrer(referrer, host string) string {
+	if referrer != "" {
+		// Simple domain extraction from referrer URL
+		if strings.HasPrefix(referrer, "http://") {
+			referrer = referrer[7:]
+		} else if strings.HasPrefix(referrer, "https://") {
+			referrer = referrer[8:]
+		}
+		if idx := strings.Index(referrer, "/"); idx != -1 {
+			referrer = referrer[:idx]
+		}
+		if idx := strings.Index(referrer, ":"); idx != -1 {
+			referrer = referrer[:idx]
+		}
+		return referrer
+	}
+	return host
+}
+
+// parseUserAgentDeviceType attempts to determine device type from user agent string
+func parseUserAgentDeviceType(userAgent string) string {
+	userAgent = strings.ToLower(userAgent)
+	
+	if strings.Contains(userAgent, "mobile") || strings.Contains(userAgent, "android") || strings.Contains(userAgent, "iphone") {
+		return "mobile"
+	}
+	if strings.Contains(userAgent, "tablet") || strings.Contains(userAgent, "ipad") {
+		return "tablet"
+	}
+	return "desktop"
 }

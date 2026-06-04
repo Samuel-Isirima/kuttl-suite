@@ -11,4 +11,4 @@ export interface AILayerHandle {
         status: AIStatus;
     }>;
 }
-export declare function createAILayer(): AILayerHandle;
+export declare function createAILayer(websiteKey?: string, apiBaseUrl?: string): AILayerHandle;

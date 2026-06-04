@@ -72,7 +72,7 @@ func main() {
 	// Initialize services
 	jwtService := auth.NewJWTService(cfg.JWTSecret, cfg.GetJWTExpiry())
 	authService := auth.NewService(db, jwtService, cfg.APITokenPrefix)
-	authMiddleware := middleware.NewAuthMiddleware(jwtService, authService)
+	authMiddleware := middleware.NewAuthMiddleware(jwtService, authService, db.DB)
 	usageService := usage.NewService(db.DB)
 
 	// Initialize repositories with sqlx wrapper
@@ -85,6 +85,8 @@ func main() {
 	authHandler := handlers.NewAuthHandler(authService)
 	dashboardHandler := handlers.NewDashboardHandler(db.DB)
 	usageHandler := handlers.NewUsageHandler(usageService)
+	customizationHandler := handlers.NewCustomizationHandler(db.DB)
+	websitesHandler := handlers.NewWebsitesHandler(db.DB)
 	
 	// Initialize AI handler with config
 	aiConfig := &handlers.AIConfig{
@@ -93,7 +95,7 @@ func main() {
 		Model:    getAIModel(cfg),
 		Timeout:  60 * time.Second,
 	}
-	aiHandler := handlers.NewAIHandler(promptRepo, embeddingRepo, snapshotRepo, aiConfig, usageService)
+	aiHandler := handlers.NewAIHandler(promptRepo, embeddingRepo, snapshotRepo, aiConfig, usageService, db.DB)
 	
 	// Initialize AI provider for embeddings (hardcode OpenAI since Anthropic doesn't support embeddings)
 	var aiProvider services.AIProvider
@@ -120,7 +122,7 @@ func main() {
 	rateLimiter := middleware.NewRateLimiter(cfg.RateLimit)
 
 	// Setup routes
-	router := setupRoutes(authHandler, aiHandler, snapshotHandler, dashboardHandler, usageHandler, authMiddleware, rateLimiter, requestLogger, cfg, db)
+	router := setupRoutes(authHandler, aiHandler, snapshotHandler, dashboardHandler, usageHandler, customizationHandler, websitesHandler, authMiddleware, rateLimiter, requestLogger, cfg, db)
 
 	logger.Info(fmt.Sprintf("Starting server on port %s", cfg.Port))
 	logger.Info(fmt.Sprintf("AI Provider: %s", cfg.AIProvider))
@@ -145,6 +147,8 @@ func setupRoutes(
 	snapshotHandler *handlers.SnapshotHandler,
 	dashboardHandler *handlers.DashboardHandler,
 	usageHandler *handlers.UsageHandler,
+	customizationHandler *handlers.CustomizationHandler,
+	websitesHandler *handlers.WebsitesHandler,
 	authMiddleware *middleware.AuthMiddleware,
 	rateLimiter *middleware.RateLimiter,
 	requestLogger *logger.Logger,
@@ -165,6 +169,7 @@ func setupRoutes(
 	public.HandleFunc("/health/detailed", createDetailedHealthHandler(db)).Methods("GET", "OPTIONS")
 	public.HandleFunc("/auth/register", authHandler.Register).Methods("POST", "OPTIONS")
 	public.HandleFunc("/auth/login", authHandler.Login).Methods("POST", "OPTIONS")
+	public.HandleFunc("/websites/by-hash/{hash_key}", websitesHandler.GetWebsiteByHashKey).Methods("GET", "OPTIONS")
 
 	// Serve fingerprinting script
 	router.HandleFunc("/fingerprint.js", func(w http.ResponseWriter, r *http.Request) {
@@ -177,6 +182,8 @@ func setupRoutes(
 	protected := router.PathPrefix("/api/v1").Subrouter()
 	protected.Use(authMiddleware.JWTAuth)
 	protected.HandleFunc("/auth/profile", authHandler.GetProfile).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/auth/profile", authHandler.UpdateProfile).Methods("PUT", "OPTIONS")
+	protected.HandleFunc("/auth/change-password", authHandler.ChangePassword).Methods("POST", "OPTIONS")
 	protected.HandleFunc("/auth/tokens", authHandler.CreateAPIToken).Methods("POST", "OPTIONS")
 	protected.HandleFunc("/auth/tokens", authHandler.ListAPITokens).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/auth/tokens/{tokenId}", authHandler.RevokeAPIToken).Methods("DELETE", "OPTIONS")
@@ -185,11 +192,26 @@ func setupRoutes(
 	protected.HandleFunc("/dashboard", dashboardHandler.GetDashboardData).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/dashboard/metrics", dashboardHandler.GetMetrics).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/dashboard/activity", dashboardHandler.GetRecentActivity).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/dashboard/analytics", dashboardHandler.GetAnalyticsData).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/dashboard/usage", dashboardHandler.GetUsageData).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/dashboard/customizations-by-plan", dashboardHandler.GetCustomizationsByPlan).Methods("GET", "OPTIONS")
 
 	// Usage routes
 	protected.HandleFunc("/usage/calls", usageHandler.GetAPICalls).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/usage/stats", usageHandler.GetUsageStats).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/usage/websites", usageHandler.GetWebsites).Methods("GET", "OPTIONS")
+
+	// Customization routes
+	protected.HandleFunc("/customizations", customizationHandler.GetCustomizations).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/customizations", customizationHandler.CreateCustomization).Methods("POST", "OPTIONS")
+	protected.HandleFunc("/customizations/stats", customizationHandler.GetCustomizationStats).Methods("GET", "OPTIONS")
+
+	// Websites routes
+	protected.HandleFunc("/websites", websitesHandler.ListWebsites).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/websites", websitesHandler.CreateWebsite).Methods("POST", "OPTIONS")
+	protected.HandleFunc("/websites/{id}", websitesHandler.GetWebsite).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/websites/{id}", websitesHandler.UpdateWebsite).Methods("PUT", "OPTIONS")
+	protected.HandleFunc("/websites/{id}", websitesHandler.DeleteWebsite).Methods("DELETE", "OPTIONS")
 
 	// Snapshot routes
 	protected.HandleFunc("/snapshots", snapshotHandler.CreateSnapshot).Methods("POST", "OPTIONS")
@@ -208,9 +230,9 @@ func setupRoutes(
 	// Context routes
 	protected.HandleFunc("/websites/context", snapshotHandler.GetWebsiteContext).Methods("GET", "OPTIONS")
 
-	// AI and snapshot endpoints (supports both JWT and API key auth, or no auth for development)
+	// AI and snapshot endpoints (supports website hash key auth for tracking)
 	apiRoutes := router.PathPrefix("/api").Subrouter()
-	apiRoutes.Use(authMiddleware.OptionalAuth) // Allow both auth types
+	apiRoutes.Use(authMiddleware.OptionalWebsiteAuth) // Allow website hash key auth
 	apiRoutes.HandleFunc("/prompt", aiHandler.HandlePrompt).Methods("POST", "OPTIONS")
 	
 	// Debug route to test route registration
@@ -219,10 +241,14 @@ func setupRoutes(
 		w.Write([]byte("Route registration working!"))
 	}).Methods("GET")
 	
-	// Snapshot routes for development (no auth required)  
+	// Snapshot routes for development (no auth required)
 	apiRoutes.HandleFunc("/snapshots", snapshotHandler.CreateSnapshot).Methods("POST", "OPTIONS")
 	apiRoutes.HandleFunc("/snapshots", snapshotHandler.ListSnapshots).Methods("GET")
 	apiRoutes.HandleFunc("/snapshots/{id}", snapshotHandler.GetSnapshot).Methods("GET")
+
+	// Widget customization routes — identified by browser fingerprint + website hash key, no user account needed
+	apiRoutes.HandleFunc("/customizations", customizationHandler.CreateCustomizationFromWidget).Methods("POST", "OPTIONS")
+	apiRoutes.HandleFunc("/customizations", customizationHandler.GetCustomizationsByFingerprint).Methods("GET", "OPTIONS")
 
 	return router
 }

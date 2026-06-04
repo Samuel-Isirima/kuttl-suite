@@ -1,0 +1,1 @@
+import{y as i,a as n,p as t}from"./chunk-EPOLDU6W-QJC1U9FI.js";import{i as s,g as o}from"./api-C0W-rHH-.js";function p({children:a}){const e=i();return n.useEffect(()=>{if(!s()){e("/login",{replace:!0});return}const r=o();r&&!r.verified&&console.warn("User email not verified")},[e]),s()?t.jsx(t.Fragment,{children:a}):null}export{p as A};

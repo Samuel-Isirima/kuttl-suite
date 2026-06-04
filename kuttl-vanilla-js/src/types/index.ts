@@ -175,6 +175,8 @@ export interface InterceptConfig {
   debug?: boolean;
   ai?: AIProviderConfig;
   onSelect?: (el: SelectedElement | null) => void;  // click-to-select callback
+  /** Website hash key — sent as X-Website-Key on every API request. Read automatically from data-website-key on the <script> tag. */
+  websiteKey?: string;
   
   /** Automatic website snapshotting configuration */
   snapshot?: {

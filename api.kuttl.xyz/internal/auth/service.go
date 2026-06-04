@@ -582,3 +582,37 @@ func (s *Service) ChangePassword(userID uuid.UUID, currentPassword, newPassword 
 	return nil
 }
 
+// UpdateProfile updates user profile information
+func (s *Service) UpdateProfile(userID uuid.UUID, req *models.ProfileUpdateRequest) (*models.User, error) {
+	// Check if email is already used by another user
+	var exists bool
+	err := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE email = $1 AND id != $2)", req.Email, userID).Scan(&exists)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check email uniqueness: %w", err)
+	}
+	if exists {
+		return nil, fmt.Errorf("user with this email already exists")
+	}
+
+	// Update user profile
+	query := `
+		UPDATE users 
+		SET name = $1, email = $2, updated_at = NOW()
+		WHERE id = $3
+		RETURNING id, email, name, role, verified, created_at, updated_at
+	`
+	
+	user := &models.User{}
+	err = s.db.QueryRow(query, req.Name, req.Email, userID).Scan(
+		&user.ID, &user.Email, &user.Name, &user.Role, &user.Verified, &user.CreatedAt, &user.UpdatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("user not found")
+		}
+		return nil, fmt.Errorf("failed to update profile: %w", err)
+	}
+	
+	return user, nil
+}
+

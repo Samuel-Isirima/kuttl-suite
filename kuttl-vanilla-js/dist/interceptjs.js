@@ -1043,7 +1043,64 @@ function setInputValue(node, value) {
 function log(debug, message) {
   if (debug) console.warn(`[InterceptJS]`, message);
 }
-const PROXY_URL = "http://localhost:8080/api/prompt";
+const STORAGE_KEY = "kuttl_fp";
+function collect() {
+  var _a;
+  const c = [];
+  c.push(`s:${screen.width}x${screen.height}x${screen.colorDepth}`);
+  try {
+    c.push(`tz:${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
+  } catch {
+    c.push(`tzo:${(/* @__PURE__ */ new Date()).getTimezoneOffset()}`);
+  }
+  c.push(`lang:${navigator.language}`);
+  if ((_a = navigator.languages) == null ? void 0 : _a.length) c.push(`langs:${navigator.languages.join(",")}`);
+  c.push(`plat:${navigator.platform}`);
+  if (navigator.hardwareConcurrency) c.push(`cpu:${navigator.hardwareConcurrency}`);
+  if (navigator.deviceMemory) c.push(`mem:${navigator.deviceMemory}`);
+  try {
+    const cv = document.createElement("canvas");
+    const ctx = cv.getContext("2d");
+    if (ctx) {
+      ctx.textBaseline = "top";
+      ctx.font = "14px Arial";
+      ctx.fillStyle = "#f60";
+      ctx.fillRect(0, 0, 10, 10);
+      ctx.fillStyle = "#069";
+      ctx.fillText("kuttl", 2, 2);
+      c.push(`cv:${cv.toDataURL().slice(22, 50)}`);
+    }
+  } catch {
+    c.push("cv:err");
+  }
+  return c;
+}
+function hash(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) + h ^ s.charCodeAt(i)) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+let _cached = null;
+function getFingerprint() {
+  if (_cached) return _cached;
+  try {
+    const stored = sessionStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      _cached = stored;
+      return _cached;
+    }
+  } catch {
+  }
+  _cached = hash(collect().sort().join("|"));
+  try {
+    sessionStorage.setItem(STORAGE_KEY, _cached);
+  } catch {
+  }
+  return _cached;
+}
+const DEFAULT_API_BASE = "http://localhost:8080";
 function countTreeNodes(node) {
   if (node.nodeType === "text") return 1;
   return 1 + node.children.reduce((sum, child) => sum + countTreeNodes(child), 0);
@@ -1065,7 +1122,8 @@ function findNodesWithLayoutContext(node) {
   }
   return result;
 }
-function createAILayer() {
+function createAILayer(websiteKey, apiBaseUrl) {
+  const proxyUrl = `${(apiBaseUrl ?? DEFAULT_API_BASE).replace(/\/$/, "")}/api/prompt`;
   return {
     async prompt(userPrompt, workingTree, descAttr, selection, websiteId) {
       var _a;
@@ -1082,11 +1140,16 @@ function createAILayer() {
         selection,
         websiteId
       };
+      const reqHeaders = {
+        "Content-Type": "application/json",
+        "X-Browser-Fingerprint": getFingerprint()
+      };
+      if (websiteKey) reqHeaders["X-Website-Key"] = websiteKey;
       let response;
       try {
-        response = await fetch(PROXY_URL, {
+        response = await fetch(proxyUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: reqHeaders,
           body: JSON.stringify(body)
         });
       } catch (err) {
@@ -2153,6 +2216,7 @@ class SnapshotAPI {
       baseUrl: config.baseUrl.replace(/\/$/, ""),
       // Remove trailing slash
       apiKey: config.apiKey || "",
+      websiteKey: config.websiteKey || "",
       timeout: config.timeout || 1e4
     };
   }
@@ -2267,6 +2331,10 @@ class SnapshotAPI {
     if (this.config.apiKey) {
       headers.set("Authorization", `Bearer ${this.config.apiKey}`);
     }
+    if (this.config.websiteKey) {
+      headers.set("X-Website-Key", this.config.websiteKey);
+    }
+    headers.set("X-Browser-Fingerprint", getFingerprint());
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
     try {
@@ -2326,7 +2394,7 @@ function generateUserId() {
   return "anonymous";
 }
 function init(userConfig = {}) {
-  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
   console.log("[InterceptJS DEBUG] Raw userConfig received:", userConfig);
   const config = resolveConfig(userConfig);
   console.log("[InterceptJS DEBUG] Resolved config:", config);
@@ -2353,24 +2421,27 @@ function init(userConfig = {}) {
       }
     }
   }
-  const aiLayer = createAILayer();
+  const aiLayer = createAILayer(config.websiteKey ?? void 0, (_b = (_a = config.snapshot) == null ? void 0 : _a.api) == null ? void 0 : _b.baseUrl);
   const serializer = createWebsiteSerializer({
     uidAttribute: config.uidAttribute,
     descriptionAttribute: config.descriptionAttribute
   });
   let snapshotAPI = null;
   let lastSnapshotTime = 0;
-  const websiteId = ((_a = config.snapshot) == null ? void 0 : _a.websiteId) || generateWebsiteId();
-  const userId = ((_b = config.snapshot) == null ? void 0 : _b.userId) || generateUserId();
+  const websiteId = ((_c = config.snapshot) == null ? void 0 : _c.websiteId) || generateWebsiteId();
+  const userId = ((_d = config.snapshot) == null ? void 0 : _d.userId) || generateUserId();
   console.log("[InterceptJS DEBUG] Snapshot config check:", {
-    enabled: (_c = config.snapshot) == null ? void 0 : _c.enabled,
-    hasApi: !!((_d = config.snapshot) == null ? void 0 : _d.api),
+    enabled: (_e = config.snapshot) == null ? void 0 : _e.enabled,
+    hasApi: !!((_f = config.snapshot) == null ? void 0 : _f.api),
     websiteId,
     userId
   });
-  if (((_e = config.snapshot) == null ? void 0 : _e.enabled) && ((_f = config.snapshot) == null ? void 0 : _f.api)) {
+  if (((_g = config.snapshot) == null ? void 0 : _g.enabled) && ((_h = config.snapshot) == null ? void 0 : _h.api)) {
     console.log("[InterceptJS DEBUG] Creating SnapshotAPI instance");
-    snapshotAPI = new SnapshotAPI(config.snapshot.api);
+    snapshotAPI = new SnapshotAPI({
+      ...config.snapshot.api,
+      ...config.websiteKey ? { websiteKey: config.websiteKey } : {}
+    });
     if (config.debug) {
       console.log("[InterceptJS] Automatic snapshotting enabled", {
         websiteId,
@@ -2380,8 +2451,8 @@ function init(userConfig = {}) {
     }
   } else {
     console.log("[InterceptJS DEBUG] Snapshot API not created:", {
-      enabled: (_g = config.snapshot) == null ? void 0 : _g.enabled,
-      hasApi: !!((_h = config.snapshot) == null ? void 0 : _h.api)
+      enabled: (_i = config.snapshot) == null ? void 0 : _i.enabled,
+      hasApi: !!((_j = config.snapshot) == null ? void 0 : _j.api)
     });
   }
   let currentSelection = null;
@@ -2705,9 +2776,9 @@ function init(userConfig = {}) {
     }
   };
   console.log("[InterceptJS DEBUG] Checking if initial snapshot should be created:", {
-    enabled: (_i = config.snapshot) == null ? void 0 : _i.enabled
+    enabled: (_k = config.snapshot) == null ? void 0 : _k.enabled
   });
-  if ((_j = config.snapshot) == null ? void 0 : _j.enabled) {
+  if ((_l = config.snapshot) == null ? void 0 : _l.enabled) {
     console.log("[InterceptJS DEBUG] Scheduling initial snapshot in 100ms");
     setTimeout(() => {
       console.log("[InterceptJS DEBUG] Initial snapshot timeout fired - calling createAndSendSnapshot");
@@ -2733,6 +2804,7 @@ function resolveConfig(config) {
     persistKey: config.persistKey ?? null,
     debug: config.debug ?? false,
     ai: config.ai ?? null,
+    websiteKey: config.websiteKey ?? null,
     onSelect: config.onSelect ?? null,
     snapshot: {
       enabled: ((_a = config.snapshot) == null ? void 0 : _a.enabled) ?? false,
