@@ -92,10 +92,7 @@ func (h *WebsitesHandler) ListWebsites(w http.ResponseWriter, r *http.Request) {
 		websites = []Website{}
 	}
 
-	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"data":    websites,
-	})
+	response.JSON(w, http.StatusOK, websites)
 }
 
 // CreateWebsite creates a new website with a unique hash key
@@ -172,10 +169,7 @@ func (h *WebsitesHandler) CreateWebsite(w http.ResponseWriter, r *http.Request) 
 		TotalRequests: 0,
 	}
 
-	response.JSON(w, http.StatusCreated, map[string]interface{}{
-		"success": true,
-		"data":    website,
-	})
+	response.JSON(w, http.StatusCreated, website)
 }
 
 // GetWebsite returns a specific website by ID
@@ -214,10 +208,7 @@ func (h *WebsitesHandler) GetWebsite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"data":    website,
-	})
+	response.JSON(w, http.StatusOK, website)
 }
 
 // UpdateWebsite updates a website's properties
@@ -361,8 +352,5 @@ func (h *WebsitesHandler) GetWebsiteByHashKey(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"data":    website,
-	})
+	response.JSON(w, http.StatusOK, website)
 }

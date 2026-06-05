@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -69,35 +70,48 @@ func (ch *CustomizationHandler) GetCustomizations(w http.ResponseWriter, r *http
 	status := r.URL.Query().Get("status")
 	modType := r.URL.Query().Get("type")
 
-	// Include customizations directly owned by the user OR belonging to the user's websites
+	// Match customizations via all possible ownership paths:
+	//   1. Directly created by the dashboard user (user_id)
+	//   2. Widget customizations whose website_id FK resolves to a website owned by the user
+	//   3. Widget customizations whose browser_client_id traces back to a website owned by the user
+	baseWhere := `
+		WHERE (
+			wc.user_id = $1
+			OR wc.website_id IN (SELECT id FROM websites WHERE user_id = $1)
+			OR wc.browser_client_id IN (
+				SELECT bc.id FROM browser_clients bc
+				INNER JOIN websites w ON w.hash_key = bc.website_hash
+				WHERE w.user_id = $1
+			)
+		)`
+
 	query := `
-		SELECT wc.id, wc.user_id, wc.website_url, wc.user_request, wc.change_description,
-			   wc.element_targeted, wc.modification_type, wc.status, wc.applied_at, wc.created_at,
-			   wc.prompt_id, wc.snapshot_id
-		FROM website_customizations wc
-		LEFT JOIN websites w ON w.id = wc.website_id
-		WHERE wc.user_id = $1 OR w.user_id = $1`
+		SELECT id, user_id, website_url, user_request, change_description,
+			   element_targeted, modification_type, status, applied_at, created_at,
+			   prompt_id, snapshot_id
+		FROM website_customizations wc` + baseWhere
 
 	args := []interface{}{userID}
 	argIndex := 2
 
 	if status != "" && status != "all" {
-		query += ` AND status = $` + strconv.Itoa(argIndex)
+		query += ` AND wc.status = $` + strconv.Itoa(argIndex)
 		args = append(args, status)
 		argIndex++
 	}
 
 	if modType != "" && modType != "all" {
-		query += ` AND modification_type = $` + strconv.Itoa(argIndex)
+		query += ` AND wc.modification_type = $` + strconv.Itoa(argIndex)
 		args = append(args, modType)
 		argIndex++
 	}
 
-	query += ` ORDER BY created_at DESC LIMIT $` + strconv.Itoa(argIndex) + ` OFFSET $` + strconv.Itoa(argIndex+1)
+	query += ` ORDER BY wc.created_at DESC LIMIT $` + strconv.Itoa(argIndex) + ` OFFSET $` + strconv.Itoa(argIndex+1)
 	args = append(args, limit, offset)
 
 	rows, err := ch.db.Query(query, args...)
 	if err != nil {
+		log.Printf("GetCustomizations query error: %v", err)
 		response.Error(w, http.StatusInternalServerError, "Failed to fetch customizations")
 		return
 	}
@@ -116,10 +130,11 @@ func (ch *CustomizationHandler) GetCustomizations(w http.ResponseWriter, r *http
 		customizations = append(customizations, custom)
 	}
 
-	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"data":    customizations,
-	})
+	log.Printf("GetCustomizations: returning %d records for user %s", len(customizations), userID)
+	if customizations == nil {
+		customizations = []WebsiteCustomization{}
+	}
+	response.JSON(w, http.StatusOK, customizations)
 }
 
 func (ch *CustomizationHandler) GetCustomizationStats(w http.ResponseWriter, r *http.Request) {
@@ -134,8 +149,15 @@ func (ch *CustomizationHandler) GetCustomizationStats(w http.ResponseWriter, r *
 
 	scope := `
 		FROM website_customizations wc
-		LEFT JOIN websites w ON w.id = wc.website_id
-		WHERE wc.user_id = $1 OR w.user_id = $1`
+		WHERE (
+			wc.user_id = $1
+			OR wc.website_id IN (SELECT id FROM websites WHERE user_id = $1)
+			OR wc.browser_client_id IN (
+				SELECT bc.id FROM browser_clients bc
+				INNER JOIN websites w ON w.hash_key = bc.website_hash
+				WHERE w.user_id = $1
+			)
+		)`
 
 	err := ch.db.QueryRow(`SELECT COUNT(*) `+scope, userID).Scan(&stats.TotalChanges)
 	if err != nil {
@@ -156,10 +178,7 @@ func (ch *CustomizationHandler) GetCustomizationStats(w http.ResponseWriter, r *
 	// Get average apply time (mock for now)
 	stats.AvgApplyTime = 2.4
 
-	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"data":    stats,
-	})
+	response.JSON(w, http.StatusOK, stats)
 }
 
 func (ch *CustomizationHandler) CreateCustomization(w http.ResponseWriter, r *http.Request) {
@@ -204,10 +223,7 @@ func (ch *CustomizationHandler) CreateCustomization(w http.ResponseWriter, r *ht
 		return
 	}
 
-	response.JSON(w, http.StatusCreated, map[string]interface{}{
-		"success": true,
-		"data":    map[string]string{"id": customizationID},
-	})
+	response.JSON(w, http.StatusCreated, map[string]string{"id": customizationID})
 }
 
 // CreateCustomizationFromWidget is called by the vanilla JS widget embedded on customer sites.
@@ -268,10 +284,7 @@ func (ch *CustomizationHandler) CreateCustomizationFromWidget(w http.ResponseWri
 		return
 	}
 
-	response.JSON(w, http.StatusCreated, map[string]interface{}{
-		"success": true,
-		"data":    map[string]string{"id": customizationID},
-	})
+	response.JSON(w, http.StatusCreated, map[string]string{"id": customizationID})
 }
 
 // GetCustomizationsByFingerprint lets the widget retrieve its own stored customizations
@@ -322,8 +335,8 @@ func (ch *CustomizationHandler) GetCustomizationsByFingerprint(w http.ResponseWr
 		customizations = append(customizations, c)
 	}
 
-	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"data":    customizations,
-	})
+	if customizations == nil {
+		customizations = []WidgetCustomization{}
+	}
+	response.JSON(w, http.StatusOK, customizations)
 }
