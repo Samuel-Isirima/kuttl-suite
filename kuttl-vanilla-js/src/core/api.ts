@@ -36,6 +36,20 @@ export class SnapshotAPI {
     };
   }
 
+  async hasSnapshot(websiteId: string): Promise<boolean> {
+    try {
+      const response = await this.makeRequest(
+        `/api/snapshots/exists?website_id=${encodeURIComponent(websiteId)}`,
+        { method: 'GET' },
+      );
+      if (!response.ok) return false;
+      const data = await response.json();
+      return data.exists === true;
+    } catch {
+      return false;
+    }
+  }
+
   async createSnapshot(snapshot: WebsiteSnapshot): Promise<SnapshotAPIResponse> {
     console.log("[SnapshotAPI DEBUG] createSnapshot called with:", snapshot);
     

@@ -116,7 +116,7 @@ func main() {
 		logger.Info("Embeddings disabled - no suitable AI provider")
 		embeddingService = nil
 	}
-	snapshotHandler := handlers.NewSnapshotHandler(snapshotRepo, promptRepo, embeddingService)
+	snapshotHandler := handlers.NewSnapshotHandler(snapshotRepo, embeddingService)
 
 	// Initialize rate limiter
 	rateLimiter := middleware.NewRateLimiter(cfg.RateLimit)
@@ -227,28 +227,23 @@ func setupRoutes(
 	protected.HandleFunc("/snapshots/diffs/{id}", snapshotHandler.GetDiff).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/snapshots/search", snapshotHandler.SearchSimilarComponents).Methods("POST", "OPTIONS")
 	
-	// Context routes
-	protected.HandleFunc("/websites/context", snapshotHandler.GetWebsiteContext).Methods("GET", "OPTIONS")
 
-	// AI and snapshot endpoints (supports website hash key auth for tracking)
+	// AI prompt endpoint — optional website auth (supports both widget and dashboard callers)
 	apiRoutes := router.PathPrefix("/api").Subrouter()
-	apiRoutes.Use(authMiddleware.OptionalWebsiteAuth) // Allow website hash key auth
+	apiRoutes.Use(authMiddleware.OptionalWebsiteAuth)
 	apiRoutes.HandleFunc("/prompt", aiHandler.HandlePrompt).Methods("POST", "OPTIONS")
-	
-	// Debug route to test route registration
-	apiRoutes.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Route registration working!"))
-	}).Methods("GET")
-	
-	// Snapshot routes for development (no auth required)
-	apiRoutes.HandleFunc("/snapshots", snapshotHandler.CreateSnapshot).Methods("POST", "OPTIONS")
-	apiRoutes.HandleFunc("/snapshots", snapshotHandler.ListSnapshots).Methods("GET")
-	apiRoutes.HandleFunc("/snapshots/{id}", snapshotHandler.GetSnapshot).Methods("GET")
 
-	// Widget customization routes — identified by browser fingerprint + website hash key, no user account needed
-	apiRoutes.HandleFunc("/customizations", customizationHandler.CreateCustomizationFromWidget).Methods("POST", "OPTIONS")
-	apiRoutes.HandleFunc("/customizations", customizationHandler.GetCustomizationsByFingerprint).Methods("GET", "OPTIONS")
+	// Widget endpoints — require a valid, active X-Website-Key
+	widgetRoutes := router.PathPrefix("/api").Subrouter()
+	widgetRoutes.Use(authMiddleware.RequireWebsiteKey)
+	widgetRoutes.HandleFunc("/validate", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{"valid": true})
+	}).Methods("GET", "OPTIONS")
+	widgetRoutes.HandleFunc("/snapshots/exists", snapshotHandler.SnapshotExists).Methods("GET", "OPTIONS")
+	widgetRoutes.HandleFunc("/snapshots", snapshotHandler.CreateSnapshot).Methods("POST", "OPTIONS")
+	widgetRoutes.HandleFunc("/customizations", customizationHandler.CreateCustomizationFromWidget).Methods("POST", "OPTIONS")
+	widgetRoutes.HandleFunc("/customizations", customizationHandler.GetCustomizationsByFingerprint).Methods("GET", "OPTIONS")
 
 	return router
 }

@@ -127,6 +127,34 @@ func (m *AuthMiddleware) OptionalAuth(next http.Handler) http.Handler {
 	})
 }
 
+// RequireWebsiteKey enforces that every request carries a valid, active X-Website-Key.
+// Returns 401 if the header is missing, the key is not found, or the website is disabled.
+// Does not perform origin verification — that is handled separately by WebsiteAuth.
+func (m *AuthMiddleware) RequireWebsiteKey(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "OPTIONS" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		hashKey := extractWebsiteHashKey(r)
+		if hashKey == "" {
+			response.Error(w, http.StatusUnauthorized, "Missing X-Website-Key header")
+			return
+		}
+
+		website, err := m.validateWebsiteHashKey(hashKey)
+		if err != nil {
+			response.Error(w, http.StatusUnauthorized, "Invalid or disabled website key")
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), WebsiteContextKey, website)
+		go func() { _, _ = m.db.Exec("SELECT increment_website_requests($1)", hashKey) }()
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 // WebsiteAuth middleware for website hash key authentication (for tracking requests)
 func (m *AuthMiddleware) WebsiteAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

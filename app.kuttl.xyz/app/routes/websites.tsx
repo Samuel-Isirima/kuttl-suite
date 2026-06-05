@@ -1,5 +1,5 @@
 import { DashboardLayout } from "@/components/dashboard-layout";
-import { Plus, Search, Globe, Copy, Eye, Trash2, Settings, ExternalLink } from "lucide-react";
+import { Plus, Search, Globe, Copy, Trash2, ExternalLink } from "lucide-react";
 import { Input } from "../components/ui/input";
 import { websitesApi } from "../lib/api";
 import { useState, useEffect } from "react";
@@ -35,6 +35,8 @@ export default function Websites() {
     url: "",
     description: ""
   });
+  const [websiteToDelete, setWebsiteToDelete] = useState<Website | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     // Debug auth state
@@ -89,6 +91,21 @@ export default function Websites() {
     const snippet = `<script src="https://app.kuttl.xyz/kuttl.js" data-website="${hashKey}"></script>`;
     navigator.clipboard.writeText(snippet);
     toast.success('JavaScript snippet copied to clipboard');
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!websiteToDelete) return;
+    setDeleting(true);
+    try {
+      await websitesApi.delete(websiteToDelete.id);
+      setWebsites(prev => prev.filter(w => w.id !== websiteToDelete.id));
+      toast.success(`"${websiteToDelete.name}" deleted`);
+      setWebsiteToDelete(null);
+    } catch (error) {
+      toast.error('Failed to delete website');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const truncateHashKey = (hashKey: string, maxLength: number = 20) => {
@@ -196,13 +213,11 @@ export default function Websites() {
                     )}
                   </div>
                   <div className="flex items-center space-x-1">
-                    <button className="p-1 text-gray-400 hover:text-gray-600">
-                      <Eye className="h-4 w-4" />
-                    </button>
-                    <button className="p-1 text-gray-400 hover:text-gray-600">
-                      <Settings className="h-4 w-4" />
-                    </button>
-                    <button className="p-1 text-gray-400 hover:text-red-600">
+                    <button
+                      onClick={() => setWebsiteToDelete(website)}
+                      className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                      title="Delete website"
+                    >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
@@ -332,6 +347,52 @@ export default function Websites() {
                     </button>
                   </div>
                 </form>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Delete Confirmation Modal */}
+        {websiteToDelete && (
+          <div className="fixed inset-0 z-50 overflow-y-auto">
+            <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+              <div
+                className="fixed inset-0 transition-opacity"
+                aria-hidden="true"
+                onClick={() => !deleting && setWebsiteToDelete(null)}
+              >
+                <div className="absolute inset-0 bg-gray-500 opacity-75"></div>
+              </div>
+              <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+              <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-md sm:w-full relative z-10">
+                <div className="bg-white px-6 pt-6 pb-4">
+                  <div className="flex items-start space-x-3">
+                    <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                      <Trash2 className="h-5 w-5 text-red-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-medium text-gray-900">Delete website</h3>
+                      <p className="mt-1 text-sm text-gray-500">
+                        Are you sure you want to delete <span className="font-semibold text-gray-800">"{websiteToDelete.name}"</span>? This will permanently remove the website and its hash key. This action cannot be undone.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-gray-50 px-6 py-3 flex justify-end space-x-3">
+                  <button
+                    onClick={() => setWebsiteToDelete(null)}
+                    disabled={deleting}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleDeleteConfirm}
+                    disabled={deleting}
+                    className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {deleting ? 'Deleting...' : 'Delete'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

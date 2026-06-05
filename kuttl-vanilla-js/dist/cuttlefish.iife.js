@@ -2222,6 +2222,19 @@ var Cuttlefish = (function(exports) {
         timeout: config.timeout || 1e4
       };
     }
+    async hasSnapshot(websiteId) {
+      try {
+        const response = await this.makeRequest(
+          `/api/snapshots/exists?website_id=${encodeURIComponent(websiteId)}`,
+          { method: "GET" }
+        );
+        if (!response.ok) return false;
+        const data = await response.json();
+        return data.exists === true;
+      } catch {
+        return false;
+      }
+    }
     async createSnapshot(snapshot) {
       var _a, _b, _c, _d, _e, _f;
       console.log("[SnapshotAPI DEBUG] createSnapshot called with:", snapshot);
@@ -2479,6 +2492,10 @@ var Cuttlefish = (function(exports) {
           snapshotAPI: !!snapshotAPI,
           enabled: (_c2 = config.snapshot) == null ? void 0 : _c2.enabled
         });
+        return;
+      }
+      if (await snapshotAPI.hasSnapshot(websiteId)) {
+        if (config.debug) console.log("[InterceptJS] Snapshot already exists for this website — skipping.");
         return;
       }
       const now = Date.now();
@@ -3428,27 +3445,33 @@ var Cuttlefish = (function(exports) {
   const _scriptEl = document.currentScript;
   const _websiteKey = (_scriptEl == null ? void 0 : _scriptEl.getAttribute("data-website-key")) ?? null;
   function init(config = {}) {
+    if (!_websiteKey) return;
     const icpConfig = {
       debug: config.debug ?? false
     };
     if (config.root) icpConfig.root = config.root;
     if (_websiteKey) icpConfig.websiteKey = _websiteKey;
-    icpConfig.persistKey = config.persistKey ?? (_websiteKey ? `kuttl_${_websiteKey.slice(0, 8)}` : `kuttl_${window.location.hostname}`);
+    icpConfig.persistKey = config.persistKey ?? `kuttl_${_websiteKey.slice(0, 8)}`;
     const apiBaseUrl = API_BASE;
     const snapshotBase = config.snapshot ?? {};
-    {
-      const snap = {
-        enabled: snapshotBase.enabled ?? _websiteKey != null,
-        api: { baseUrl: apiBaseUrl, ...snapshotBase.api ?? {} },
-        onChanges: snapshotBase.onChanges ?? true,
-        throttleMs: snapshotBase.throttleMs ?? 5e3
-      };
-      if (snapshotBase.websiteId) snap.websiteId = snapshotBase.websiteId;
-      if (snapshotBase.userId) snap.userId = snapshotBase.userId;
-      icpConfig.snapshot = snap;
-    }
-    const intercept = init$1(icpConfig);
-    createCuttlefishUI(intercept, {});
+    const snap = {
+      enabled: snapshotBase.enabled ?? true,
+      api: { baseUrl: apiBaseUrl, ...snapshotBase.api ?? {} },
+      onChanges: snapshotBase.onChanges ?? true,
+      throttleMs: snapshotBase.throttleMs ?? 5e3
+    };
+    if (snapshotBase.websiteId) snap.websiteId = snapshotBase.websiteId;
+    if (snapshotBase.userId) snap.userId = snapshotBase.userId;
+    icpConfig.snapshot = snap;
+    fetch(`${API_BASE}/api/validate`, {
+      method: "GET",
+      headers: { "X-Website-Key": _websiteKey }
+    }).then((res) => {
+      if (!res.ok) return;
+      const intercept = init$1(icpConfig);
+      createCuttlefishUI(intercept, {});
+    }).catch(() => {
+    });
   }
   exports.init = init;
   Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });

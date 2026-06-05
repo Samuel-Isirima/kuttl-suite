@@ -23,14 +23,12 @@ import (
 
 type SnapshotHandler struct {
 	snapshots *database.SnapshotRepository
-	prompts   *database.PromptRepository
 	embedding *services.EmbeddingService
 }
 
-func NewSnapshotHandler(snapshots *database.SnapshotRepository, prompts *database.PromptRepository, embedding *services.EmbeddingService) *SnapshotHandler {
+func NewSnapshotHandler(snapshots *database.SnapshotRepository, embedding *services.EmbeddingService) *SnapshotHandler {
 	return &SnapshotHandler{
 		snapshots: snapshots,
-		prompts:   prompts,
 		embedding: embedding,
 	}
 }
@@ -40,19 +38,9 @@ func NewSnapshotHandler(snapshots *database.SnapshotRepository, prompts *databas
 // ─────────────────────────────────────────────
 
 func (h *SnapshotHandler) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("user_id").(uuid.UUID)
-	if !ok {
-		// For development, use consistent development user ID
-		userID = uuid.MustParse("d5f3bdc2-65aa-4dd6-bf2b-0e05a6192402")
-	}
-
+	// Identity comes from the browser client, not a user account
 	fingerprint := middleware.GetFingerprintFromContext(r.Context())
-	
-	// Ensure user exists - create if not found
-	if err := h.snapshots.EnsureUserExists(userID); err != nil {
-		log.Printf("Warning: Could not ensure user exists: %v", err)
-		// Continue anyway - user might exist and we just can't verify
-	}
+	website := middleware.GetWebsiteFromContext(r.Context())
 
 	var req CreateSnapshotRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -60,151 +48,77 @@ func (h *SnapshotHandler) CreateSnapshot(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Validate request
 	if req.WebsiteID == "" {
 		http.Error(w, "website_id is required", http.StatusBadRequest)
 		return
 	}
-	if req.SessionID == "" {
-		req.SessionID = uuid.New().String()
+
+	// Reject if a snapshot already exists for this website
+	if exists, err := h.snapshots.SnapshotExistsForWebsite(req.WebsiteID); err == nil && exists {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": "snapshot already exists for this website"})
+		return
 	}
+
 	if req.Version == "" {
 		req.Version = fmt.Sprintf("v%d", time.Now().Unix())
 	}
-
-	// Set default trigger type
 	if req.TriggerType == "" {
-		if req.PromptText != "" {
-			req.TriggerType = "ai_prompt"
-		} else {
-			req.TriggerType = "manual"
-		}
-	}
-
-	// Create prompt - either provided or auto-generated for snapshots
-	var promptID *uuid.UUID
-	
-	// If no prompt text provided, create an automatic "snapshot my website" prompt
-	if req.PromptText == "" {
-		req.PromptText = "Snapshot my website for AI understanding"
-		req.PromptType = "website_snapshot"
 		req.TriggerType = "auto_snapshot"
 	}
-	
-	// Create the prompt (now always created)
-	prompt := &models.UserPrompt{
-		ID:                 uuid.New(),
-		UserID:             userID,
-		WebsiteID:          req.WebsiteID,
-		SessionID:          req.SessionID,
-		PromptText:         req.PromptText,
-		PromptType:         req.PromptType,
-		PromptLanguage:     "en", // Default to English
-		SelectedElementUID: &req.SelectedElementUID,
-		PageURL:            &req.PageURL,
-		UserAgent:          &req.UserAgent,
-		Success:            true,
-		Metadata:           make(models.PromptMetadata),
+
+	// Upsert the browser client so we have a valid FK target
+	var browserClientID *string
+	if fingerprint != "" && website != nil {
+		if err := h.snapshots.UpsertBrowserClient(fingerprint, website.HashKey); err != nil {
+			log.Printf("Warning: failed to upsert browser_client: %v", err)
+		} else {
+			browserClientID = &fingerprint
+		}
 	}
 
-	if req.PromptType == "" {
-		prompt.PromptType = "ai_modification"
+	newSnapshot := &models.WebsiteSnapshot{
+		WebsiteID:       req.WebsiteID,
+		BrowserClientID: browserClientID,
+		Version:         req.Version,
+		Components:      req.Components,
+		Styles:          req.Styles,
+		Layout:          req.Layout,
+		Customizations:  req.Customizations,
+		Metadata:        req.Metadata,
+		TriggerType:     req.TriggerType,
 	}
 
-	if err := h.prompts.CreatePrompt(prompt); err != nil {
-		http.Error(w, "Failed to create prompt", http.StatusInternalServerError)
+	newSnapshot.ID = uuid.New()
+	if err := h.snapshots.CreateSnapshot(newSnapshot); err != nil {
+		http.Error(w, "Failed to create snapshot", http.StatusInternalServerError)
 		return
 	}
-	promptID = &prompt.ID
 
-	// Create new snapshot data
-	newSnapshot := &models.WebsiteSnapshot{
-		WebsiteID:          req.WebsiteID,
-		UserID:             userID,
-		SessionID:          req.SessionID,
-		Version:            req.Version,
-		Components:         req.Components,
-		Styles:             req.Styles,
-		Layout:             req.Layout,
-		Customizations:     req.Customizations,
-		Metadata:           req.Metadata,
-		PromptID:           promptID,
-		TriggerType:        req.TriggerType,
-		BrowserFingerprint: fingerprint,
-	}
+	log.Printf("Created snapshot %s for website %s (browser_client: %v)", newSnapshot.ID, req.WebsiteID, browserClientID)
 
-	// Check for duplicate content
-	duplicateID, err := h.snapshots.CheckSnapshotDuplicate(req.WebsiteID, userID, newSnapshot)
-	if err != nil {
-		log.Printf("Warning: Failed to check for duplicates: %v", err)
-		// Continue with creation anyway
-	}
-
-	var snapshot *models.WebsiteSnapshot
-
-	if duplicateID != nil {
-		// Found duplicate - return existing snapshot ID
-		existingSnapshot, err := h.snapshots.GetSnapshot(*duplicateID)
-		if err != nil {
-			http.Error(w, "Failed to retrieve existing snapshot", http.StatusInternalServerError)
-			return
-		}
-		snapshot = existingSnapshot
-		log.Printf("Found duplicate snapshot %s for website %s - skipping creation", snapshot.ID, req.WebsiteID)
-	} else {
-		// Create new snapshot - content is unique
-		newSnapshot.ID = uuid.New()
-		
-		if err := h.snapshots.CreateSnapshot(newSnapshot); err != nil {
-			http.Error(w, "Failed to create snapshot", http.StatusInternalServerError)
-			return
-		}
-		
-		snapshot = newSnapshot
-		log.Printf("Created new unique snapshot %s for website %s", snapshot.ID, req.WebsiteID)
-	}
-
-	// Update prompt with snapshot ID if prompt was created
-	if promptID != nil {
-		if err := h.prompts.UpdatePromptSnapshot(*promptID, snapshot.ID); err != nil {
-			// Log error but don't fail the request
-			log.Printf("Error updating prompt %s with snapshot %s: %v", *promptID, snapshot.ID, err)
-		}
-	}
-
-	// Process embeddings asynchronously (if embedding service is available)
+	// Process embeddings asynchronously
 	if h.embedding != nil {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 			defer cancel()
-			
-			if err := h.embedding.ProcessSnapshot(ctx, snapshot.ID); err != nil {
-				// Log error but don't fail the request
-				log.Printf("Error processing embeddings for snapshot %s: %v", snapshot.ID, err)
+			if err := h.embedding.ProcessSnapshot(ctx, newSnapshot.ID); err != nil {
+				log.Printf("Error processing embeddings for snapshot %s: %v", newSnapshot.ID, err)
 			}
 		}()
-	} else {
-		log.Printf("Skipping embeddings for snapshot %s - embedding service not available", snapshot.ID)
-	}
-
-	response := CreateSnapshotResponse{
-		ID:        snapshot.ID,
-		WebsiteID: snapshot.WebsiteID,
-		Version:   snapshot.Version,
-		CreatedAt: snapshot.CreatedAt,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	json.NewEncoder(w).Encode(CreateSnapshotResponse{
+		ID:        newSnapshot.ID,
+		WebsiteID: newSnapshot.WebsiteID,
+		Version:   newSnapshot.Version,
+		CreatedAt: newSnapshot.CreatedAt,
+	})
 }
 
 func (h *SnapshotHandler) GetSnapshot(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("user_id").(uuid.UUID)
-	if !ok {
-		// For development, use consistent development user ID
-		userID = uuid.MustParse("d5f3bdc2-65aa-4dd6-bf2b-0e05a6192402")
-	}
-
 	vars := mux.Vars(r)
 	snapshotID, err := uuid.Parse(vars["id"])
 	if err != nil {
@@ -218,31 +132,18 @@ func (h *SnapshotHandler) GetSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check ownership
-	if snapshot.UserID != userID {
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(snapshot)
 }
 
 func (h *SnapshotHandler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("user_id").(uuid.UUID)
-	if !ok {
-		// For development, use consistent development user ID
-		userID = uuid.MustParse("d5f3bdc2-65aa-4dd6-bf2b-0e05a6192402")
-	}
-
-	// Parse query parameters
 	websiteID := r.URL.Query().Get("website_id")
 	if websiteID == "" {
 		http.Error(w, "website_id parameter is required", http.StatusBadRequest)
 		return
 	}
 
-	limit := 20 // default
+	limit := 20
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
 			limit = parsed
@@ -256,7 +157,7 @@ func (h *SnapshotHandler) ListSnapshots(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	snapshots, err := h.snapshots.ListSnapshots(websiteID, userID, limit, offset)
+	snapshots, err := h.snapshots.ListSnapshots(websiteID, limit, offset)
 	if err != nil {
 		http.Error(w, "Failed to list snapshots", http.StatusInternalServerError)
 		return
@@ -273,7 +174,6 @@ func (h *SnapshotHandler) ListSnapshots(w http.ResponseWriter, r *http.Request) 
 		response.Snapshots[i] = SnapshotSummary{
 			ID:             snapshot.ID,
 			WebsiteID:      snapshot.WebsiteID,
-			SessionID:      snapshot.SessionID,
 			Version:        snapshot.Version,
 			ComponentCount: len(snapshot.Components),
 			PatchCount:     len(snapshot.Customizations.Patches),
@@ -286,27 +186,10 @@ func (h *SnapshotHandler) ListSnapshots(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *SnapshotHandler) DeleteSnapshot(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("user_id").(uuid.UUID)
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	vars := mux.Vars(r)
 	snapshotID, err := uuid.Parse(vars["id"])
 	if err != nil {
 		http.Error(w, "Invalid snapshot ID", http.StatusBadRequest)
-		return
-	}
-
-	// Check ownership
-	snapshot, err := h.snapshots.GetSnapshot(snapshotID)
-	if err != nil {
-		http.Error(w, "Snapshot not found", http.StatusNotFound)
-		return
-	}
-	if snapshot.UserID != userID {
-		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 
@@ -326,19 +209,13 @@ func (h *SnapshotHandler) DeleteSnapshot(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *SnapshotHandler) GetSnapshotStats(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("user_id").(uuid.UUID)
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	websiteID := r.URL.Query().Get("website_id")
 	if websiteID == "" {
 		http.Error(w, "website_id parameter is required", http.StatusBadRequest)
 		return
 	}
 
-	stats, err := h.snapshots.GetSnapshotStats(websiteID, userID)
+	stats, err := h.snapshots.GetSnapshotStats(websiteID)
 	if err != nil {
 		http.Error(w, "Failed to get stats", http.StatusInternalServerError)
 		return
@@ -353,8 +230,8 @@ func (h *SnapshotHandler) GetSnapshotStats(w http.ResponseWriter, r *http.Reques
 // ─────────────────────────────────────────────
 
 func (h *SnapshotHandler) CreateDiff(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("user_id").(uuid.UUID)
-	if !ok {
+	user := middleware.GetUserFromContext(r.Context())
+	if user == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -365,26 +242,24 @@ func (h *SnapshotHandler) CreateDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate snapshots exist and belong to user
 	fromSnapshot, err := h.snapshots.GetSnapshot(req.FromSnapshot)
-	if err != nil || fromSnapshot.UserID != userID {
+	if err != nil {
 		http.Error(w, "From snapshot not found", http.StatusNotFound)
 		return
 	}
 
 	toSnapshot, err := h.snapshots.GetSnapshot(req.ToSnapshot)
-	if err != nil || toSnapshot.UserID != userID {
+	if err != nil {
 		http.Error(w, "To snapshot not found", http.StatusNotFound)
 		return
 	}
 
-	// Create diff
 	diff := &models.SnapshotDiff{
 		ID:             uuid.New(),
 		FromSnapshot:   req.FromSnapshot,
 		ToSnapshot:     req.ToSnapshot,
 		WebsiteID:      fromSnapshot.WebsiteID,
-		UserID:         userID,
+		UserID:         user.ID,
 		FromVersion:    fromSnapshot.Version,
 		ToVersion:      toSnapshot.Version,
 		Components:     req.Components,
@@ -403,12 +278,6 @@ func (h *SnapshotHandler) CreateDiff(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SnapshotHandler) GetDiff(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("user_id").(uuid.UUID)
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	vars := mux.Vars(r)
 	diffID, err := uuid.Parse(vars["id"])
 	if err != nil {
@@ -419,12 +288,6 @@ func (h *SnapshotHandler) GetDiff(w http.ResponseWriter, r *http.Request) {
 	diff, err := h.snapshots.GetDiff(diffID)
 	if err != nil {
 		http.Error(w, "Diff not found", http.StatusNotFound)
-		return
-	}
-
-	// Check ownership
-	if diff.UserID != userID {
-		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 
@@ -474,12 +337,6 @@ func (h *SnapshotHandler) ListDiffs(w http.ResponseWriter, r *http.Request) {
 // ─────────────────────────────────────────────
 
 func (h *SnapshotHandler) SearchSimilarComponents(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("user_id").(uuid.UUID)
-	if !ok {
-		// For development, use consistent development user ID
-		userID = uuid.MustParse("d5f3bdc2-65aa-4dd6-bf2b-0e05a6192402")
-	}
-	
 	// Check if embedding service is available
 	if h.embedding == nil {
 		http.Error(w, "Embeddings not available", http.StatusServiceUnavailable)
@@ -512,7 +369,7 @@ func (h *SnapshotHandler) SearchSimilarComponents(w http.ResponseWriter, r *http
 	}
 
 	// Find similar components
-	embeddings, err := h.embedding.FindSimilarComponents(ctx, req.WebsiteID, userID, queryVector, req.Limit)
+	embeddings, err := h.embedding.FindSimilarComponents(ctx, req.WebsiteID, queryVector, req.Limit)
 	if err != nil {
 		http.Error(w, "Failed to search components", http.StatusInternalServerError)
 		return
@@ -540,27 +397,10 @@ func (h *SnapshotHandler) SearchSimilarComponents(w http.ResponseWriter, r *http
 }
 
 func (h *SnapshotHandler) GetSnapshotEmbeddings(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("user_id").(uuid.UUID)
-	if !ok {
-		// For development, use consistent development user ID
-		userID = uuid.MustParse("d5f3bdc2-65aa-4dd6-bf2b-0e05a6192402")
-	}
-
 	vars := mux.Vars(r)
 	snapshotID, err := uuid.Parse(vars["id"])
 	if err != nil {
 		http.Error(w, "Invalid snapshot ID", http.StatusBadRequest)
-		return
-	}
-
-	// Check snapshot ownership
-	snapshot, err := h.snapshots.GetSnapshot(snapshotID)
-	if err != nil {
-		http.Error(w, "Snapshot not found", http.StatusNotFound)
-		return
-	}
-	if snapshot.UserID != userID {
-		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 
@@ -599,38 +439,26 @@ func (h *SnapshotHandler) GetSnapshotEmbeddings(w http.ResponseWriter, r *http.R
 }
 
 // ─────────────────────────────────────────────
-// Context Handlers
+// Snapshot Existence Check
 // ─────────────────────────────────────────────
 
-func (h *SnapshotHandler) GetWebsiteContext(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("user_id").(uuid.UUID)
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
+// SnapshotExists returns {"exists": true/false} for a given website_id.
+// Used by the widget to skip sending a snapshot when one already exists.
+func (h *SnapshotHandler) SnapshotExists(w http.ResponseWriter, r *http.Request) {
 	websiteID := r.URL.Query().Get("website_id")
 	if websiteID == "" {
 		http.Error(w, "website_id parameter is required", http.StatusBadRequest)
 		return
 	}
 
-	context, err := h.snapshots.GetWebsiteContext(websiteID, userID)
+	exists, err := h.snapshots.SnapshotExistsForWebsite(websiteID)
 	if err != nil {
-		// Generate summary if no cached context exists
-		summary, err := h.snapshots.GetWebsiteContextSummary(websiteID, userID)
-		if err != nil {
-			http.Error(w, "Failed to get context", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(summary)
+		http.Error(w, "Failed to check snapshot existence", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(context)
+	json.NewEncoder(w).Encode(map[string]bool{"exists": exists})
 }
 
 // ─────────────────────────────────────────────
@@ -639,7 +467,6 @@ func (h *SnapshotHandler) GetWebsiteContext(w http.ResponseWriter, r *http.Reque
 
 type CreateSnapshotRequest struct {
 	WebsiteID      string                       `json:"website_id"`
-	SessionID      string                       `json:"session_id,omitempty"`
 	Version        string                       `json:"version,omitempty"`
 	Components     models.ComponentStateArray   `json:"components"`
 	Styles         models.StyleSnapshot         `json:"styles"`
@@ -666,7 +493,6 @@ type CreateSnapshotResponse struct {
 type SnapshotSummary struct {
 	ID             uuid.UUID `json:"id"`
 	WebsiteID      string    `json:"website_id"`
-	SessionID      string    `json:"session_id"`
 	Version        string    `json:"version"`
 	ComponentCount int       `json:"component_count"`
 	PatchCount     int       `json:"patch_count"`

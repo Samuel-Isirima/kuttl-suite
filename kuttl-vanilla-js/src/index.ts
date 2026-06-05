@@ -184,6 +184,12 @@ export function init(userConfig: InterceptConfig = {}): InterceptInstance {
       });
       return;
     }
+
+    // Skip if a snapshot already exists for this website
+    if (await snapshotAPI.hasSnapshot(websiteId)) {
+      if (config.debug) console.log("[InterceptJS] Snapshot already exists for this website — skipping.");
+      return;
+    }
     
     const now = Date.now();
     const throttleMs = config.snapshot.throttleMs || 5000;

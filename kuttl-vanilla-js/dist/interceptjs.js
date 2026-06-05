@@ -2220,6 +2220,19 @@ class SnapshotAPI {
       timeout: config.timeout || 1e4
     };
   }
+  async hasSnapshot(websiteId) {
+    try {
+      const response = await this.makeRequest(
+        `/api/snapshots/exists?website_id=${encodeURIComponent(websiteId)}`,
+        { method: "GET" }
+      );
+      if (!response.ok) return false;
+      const data = await response.json();
+      return data.exists === true;
+    } catch {
+      return false;
+    }
+  }
   async createSnapshot(snapshot) {
     var _a, _b, _c, _d, _e, _f;
     console.log("[SnapshotAPI DEBUG] createSnapshot called with:", snapshot);
@@ -2477,6 +2490,10 @@ function init(userConfig = {}) {
         snapshotAPI: !!snapshotAPI,
         enabled: (_c2 = config.snapshot) == null ? void 0 : _c2.enabled
       });
+      return;
+    }
+    if (await snapshotAPI.hasSnapshot(websiteId)) {
+      if (config.debug) console.log("[InterceptJS] Snapshot already exists for this website — skipping.");
       return;
     }
     const now = Date.now();

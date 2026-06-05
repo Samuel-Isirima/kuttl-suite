@@ -10,10 +10,6 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// ─────────────────────────────────────────────
-// Embedding Repository
-// ─────────────────────────────────────────────
-
 type EmbeddingRepository struct {
 	db *sqlx.DB
 }
@@ -22,17 +18,13 @@ func NewEmbeddingRepository(db *sqlx.DB) *EmbeddingRepository {
 	return &EmbeddingRepository{db: db}
 }
 
-// ─────────────────────────────────────────────
-// Embedding CRUD Operations
-// ─────────────────────────────────────────────
-
 func (r *EmbeddingRepository) Create(embedding *models.EmbeddingVector) error {
 	query := `
 		INSERT INTO embedding_vectors (
-			snapshot_id, website_id, user_id, vector_type, target_id,
+			snapshot_id, website_id, vector_type, target_id,
 			vector, dimensions, model, token_count, content, metadata
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id, created_at
 	`
 
@@ -46,10 +38,9 @@ func (r *EmbeddingRepository) Create(embedding *models.EmbeddingVector) error {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
-	err = r.db.QueryRow(query,
+	return r.db.QueryRow(query,
 		embedding.SnapshotID,
 		embedding.WebsiteID,
-		embedding.UserID,
 		embedding.VectorType,
 		embedding.TargetID,
 		vectorJSON,
@@ -59,216 +50,105 @@ func (r *EmbeddingRepository) Create(embedding *models.EmbeddingVector) error {
 		embedding.Content,
 		metadataJSON,
 	).Scan(&embedding.ID, &embedding.CreatedAt)
-
-	if err != nil {
-		return fmt.Errorf("failed to create embedding: %w", err)
-	}
-
-	return nil
 }
 
 func (r *EmbeddingRepository) GetByID(id uuid.UUID) (*models.EmbeddingVector, error) {
-	embedding := &models.EmbeddingVector{}
-	
 	query := `
-		SELECT id, snapshot_id, website_id, user_id, vector_type, target_id,
-			   vector, dimensions, model, token_count, content, metadata, created_at
+		SELECT id, snapshot_id, website_id, vector_type, target_id,
+		       vector, dimensions, model, token_count, content, metadata, created_at
 		FROM embedding_vectors
 		WHERE id = $1
 	`
-
-	var vectorJSON, metadataJSON []byte
-	err := r.db.QueryRow(query, id).Scan(
-		&embedding.ID,
-		&embedding.SnapshotID,
-		&embedding.WebsiteID,
-		&embedding.UserID,
-		&embedding.VectorType,
-		&embedding.TargetID,
-		&vectorJSON,
-		&embedding.Dimensions,
-		&embedding.Model,
-		&embedding.TokenCount,
-		&embedding.Content,
-		&metadataJSON,
-		&embedding.CreatedAt,
-	)
-
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("embedding not found")
-		}
-		return nil, fmt.Errorf("failed to get embedding: %w", err)
+	embedding, err := r.scanOne(r.db.QueryRow(query, id))
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("embedding not found")
 	}
-
-	// Unmarshal JSON fields
-	if err := json.Unmarshal(vectorJSON, &embedding.Vector); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal vector: %w", err)
-	}
-
-	if err := json.Unmarshal(metadataJSON, &embedding.Metadata); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
-	}
-
-	return embedding, nil
+	return embedding, err
 }
 
-func (r *EmbeddingRepository) GetByWebsiteUser(websiteID string, userID uuid.UUID, limit int) ([]*models.EmbeddingVector, error) {
+// GetByWebsite returns the most recent embeddings for a website.
+func (r *EmbeddingRepository) GetByWebsite(websiteID string, limit int) ([]*models.EmbeddingVector, error) {
 	query := `
-		SELECT id, snapshot_id, website_id, user_id, vector_type, target_id,
-			   vector, dimensions, model, token_count, content, metadata, created_at
+		SELECT id, snapshot_id, website_id, vector_type, target_id,
+		       vector, dimensions, model, token_count, content, metadata, created_at
 		FROM embedding_vectors
-		WHERE website_id = $1 AND user_id = $2
+		WHERE website_id = $1
 		ORDER BY created_at DESC
-		LIMIT $3
+		LIMIT $2
 	`
+	return r.scanMany(r.db.Query(query, websiteID, limit))
+}
 
-	rows, err := r.db.Query(query, websiteID, userID, limit)
+func (r *EmbeddingRepository) GetBySnapshot(snapshotID uuid.UUID) ([]*models.EmbeddingVector, error) {
+	query := `
+		SELECT id, snapshot_id, website_id, vector_type, target_id,
+		       vector, dimensions, model, token_count, content, metadata, created_at
+		FROM embedding_vectors
+		WHERE snapshot_id = $1
+		ORDER BY created_at DESC
+	`
+	return r.scanMany(r.db.Query(query, snapshotID))
+}
+
+func (r *EmbeddingRepository) FindSimilar(vector []float32, websiteID string, limit int) ([]*models.EmbeddingVector, error) {
+	return r.GetByWebsite(websiteID, limit)
+}
+
+func (r *EmbeddingRepository) Delete(id uuid.UUID) error {
+	result, err := r.db.Exec(`DELETE FROM embedding_vectors WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete embedding: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("embedding not found")
+	}
+	return nil
+}
+
+func (r *EmbeddingRepository) DeleteBySnapshot(snapshotID uuid.UUID) error {
+	_, err := r.db.Exec(`DELETE FROM embedding_vectors WHERE snapshot_id = $1`, snapshotID)
+	return err
+}
+
+// ─── helpers ──────────────────────────────────────────────────────────────────
+
+type rowScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+func (r *EmbeddingRepository) scanOne(row rowScanner) (*models.EmbeddingVector, error) {
+	e := &models.EmbeddingVector{}
+	var vectorJSON, metadataJSON []byte
+	if err := row.Scan(
+		&e.ID, &e.SnapshotID, &e.WebsiteID, &e.VectorType, &e.TargetID,
+		&vectorJSON, &e.Dimensions, &e.Model, &e.TokenCount, &e.Content,
+		&metadataJSON, &e.CreatedAt,
+	); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(vectorJSON, &e.Vector); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal vector: %w", err)
+	}
+	if err := json.Unmarshal(metadataJSON, &e.Metadata); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+	}
+	return e, nil
+}
+
+func (r *EmbeddingRepository) scanMany(rows *sql.Rows, err error) ([]*models.EmbeddingVector, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query embeddings: %w", err)
 	}
 	defer rows.Close()
 
-	var embeddings []*models.EmbeddingVector
+	var result []*models.EmbeddingVector
 	for rows.Next() {
-		embedding := &models.EmbeddingVector{}
-		var vectorJSON, metadataJSON []byte
-
-		err := rows.Scan(
-			&embedding.ID,
-			&embedding.SnapshotID,
-			&embedding.WebsiteID,
-			&embedding.UserID,
-			&embedding.VectorType,
-			&embedding.TargetID,
-			&vectorJSON,
-			&embedding.Dimensions,
-			&embedding.Model,
-			&embedding.TokenCount,
-			&embedding.Content,
-			&metadataJSON,
-			&embedding.CreatedAt,
-		)
-
+		e, err := r.scanOne(rows)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan embedding: %w", err)
 		}
-
-		// Unmarshal JSON fields
-		if err := json.Unmarshal(vectorJSON, &embedding.Vector); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal vector: %w", err)
-		}
-
-		if err := json.Unmarshal(metadataJSON, &embedding.Metadata); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
-		}
-
-		embeddings = append(embeddings, embedding)
+		result = append(result, e)
 	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating embeddings: %w", err)
-	}
-
-	return embeddings, nil
-}
-
-func (r *EmbeddingRepository) GetBySnapshot(snapshotID uuid.UUID) ([]*models.EmbeddingVector, error) {
-	query := `
-		SELECT id, snapshot_id, website_id, user_id, vector_type, target_id,
-			   vector, dimensions, model, token_count, content, metadata, created_at
-		FROM embedding_vectors
-		WHERE snapshot_id = $1
-		ORDER BY created_at DESC
-	`
-
-	rows, err := r.db.Query(query, snapshotID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query embeddings by snapshot: %w", err)
-	}
-	defer rows.Close()
-
-	var embeddings []*models.EmbeddingVector
-	for rows.Next() {
-		embedding := &models.EmbeddingVector{}
-		var vectorJSON, metadataJSON []byte
-
-		err := rows.Scan(
-			&embedding.ID,
-			&embedding.SnapshotID,
-			&embedding.WebsiteID,
-			&embedding.UserID,
-			&embedding.VectorType,
-			&embedding.TargetID,
-			&vectorJSON,
-			&embedding.Dimensions,
-			&embedding.Model,
-			&embedding.TokenCount,
-			&embedding.Content,
-			&metadataJSON,
-			&embedding.CreatedAt,
-		)
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan embedding: %w", err)
-		}
-
-		// Unmarshal JSON fields
-		if err := json.Unmarshal(vectorJSON, &embedding.Vector); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal vector: %w", err)
-		}
-
-		if err := json.Unmarshal(metadataJSON, &embedding.Metadata); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
-		}
-
-		embeddings = append(embeddings, embedding)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating embeddings: %w", err)
-	}
-
-	return embeddings, nil
-}
-
-func (r *EmbeddingRepository) Delete(id uuid.UUID) error {
-	query := `DELETE FROM embedding_vectors WHERE id = $1`
-	
-	result, err := r.db.Exec(query, id)
-	if err != nil {
-		return fmt.Errorf("failed to delete embedding: %w", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return fmt.Errorf("embedding not found")
-	}
-
-	return nil
-}
-
-func (r *EmbeddingRepository) DeleteBySnapshot(snapshotID uuid.UUID) error {
-	query := `DELETE FROM embedding_vectors WHERE snapshot_id = $1`
-	
-	_, err := r.db.Exec(query, snapshotID)
-	if err != nil {
-		return fmt.Errorf("failed to delete embeddings by snapshot: %w", err)
-	}
-
-	return nil
-}
-
-// ─────────────────────────────────────────────
-// Vector Similarity Search (Future Implementation)
-// ─────────────────────────────────────────────
-
-func (r *EmbeddingRepository) FindSimilar(vector []float32, websiteID string, userID uuid.UUID, limit int) ([]*models.EmbeddingVector, error) {
-	// This would implement cosine similarity search
-	// For now, return recent embeddings as a placeholder
-	return r.GetByWebsiteUser(websiteID, userID, limit)
+	return result, rows.Err()
 }

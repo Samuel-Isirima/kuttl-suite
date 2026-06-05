@@ -18,6 +18,7 @@ export interface EmbeddingAPIResponse {
 export declare class SnapshotAPI {
     private config;
     constructor(config: APIConfig);
+    hasSnapshot(websiteId: string): Promise<boolean>;
     createSnapshot(snapshot: WebsiteSnapshot): Promise<SnapshotAPIResponse>;
     createDiff(diff: SnapshotDiff): Promise<SnapshotAPIResponse>;
     generateEmbeddings(snapshotId: string): Promise<EmbeddingAPIResponse>;

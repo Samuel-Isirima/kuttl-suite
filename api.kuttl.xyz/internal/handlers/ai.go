@@ -140,7 +140,7 @@ func (h *AIHandler) HandlePrompt(w http.ResponseWriter, r *http.Request) {
 	if contextWebsiteID == "" {
 		contextWebsiteID = req.WebsiteID
 	}
-	embeddingContext, err := h.getEmbeddingContext(ctx, contextWebsiteID, userID)
+	embeddingContext, err := h.getEmbeddingContext(ctx, contextWebsiteID)
 	if err != nil {
 		// Log error but don't fail the request
 		fmt.Printf("Warning: Failed to retrieve embedding context: %v\n", err)
@@ -186,7 +186,7 @@ func (h *AIHandler) HandlePrompt(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Store prompt for future context building
-	go h.storePromptAsync(userID, req, parsedResponse)
+	go h.storePromptAsync(userID, req, parsedResponse, r)
 
 	// Write a customization record when patches were produced
 	if len(parsedResponse.Patches) > 0 {
@@ -204,9 +204,8 @@ func (h *AIHandler) HandlePrompt(w http.ResponseWriter, r *http.Request) {
 // Embedding Context Retrieval
 // ─────────────────────────────────────────────
 
-func (h *AIHandler) getEmbeddingContext(ctx context.Context, websiteID string, userID uuid.UUID) (string, error) {
-	// Get recent embeddings for this website/user to provide context
-	embeddings, err := h.embeddings.GetByWebsiteUser(websiteID, userID, 10) // Get latest 10
+func (h *AIHandler) getEmbeddingContext(ctx context.Context, websiteID string) (string, error) {
+	embeddings, err := h.embeddings.GetByWebsite(websiteID, 10)
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve embeddings: %w", err)
 	}
@@ -392,10 +391,7 @@ func (h *AIHandler) buildEnhancedPrompt(req AIPromptRequest, embeddingContext st
 // ─────────────────────────────────────────────
 
 func (h *AIHandler) getFullWebsiteStructure(websiteID string) string {
-	userID := uuid.MustParse("d5f3bdc2-65aa-4dd6-bf2b-0e05a6192402") // Dev user ID
-	
-	// Get the latest snapshot for this website
-	snapshot, err := h.snapshots.GetLatestSnapshotForWebsite(websiteID, userID)
+	snapshot, err := h.snapshots.GetLatestSnapshotForWebsite(websiteID)
 	if err != nil || snapshot == nil {
 		return "No website snapshot available. Working with current DOM tree only."
 	}
@@ -753,10 +749,18 @@ func (h *AIHandler) parseAIResponse(raw string) (AIPromptResponse, []string) {
 // Async Prompt Storage
 // ─────────────────────────────────────────────
 
-func (h *AIHandler) storePromptAsync(userID uuid.UUID, req AIPromptRequest, resp AIPromptResponse) {
-	// Store prompt asynchronously for future context building
+func (h *AIHandler) storePromptAsync(userID uuid.UUID, req AIPromptRequest, resp AIPromptResponse, r *http.Request) {
+	fingerprint := middleware.GetFingerprintFromContext(r.Context())
+	var websiteHash *string
+	if website := middleware.GetWebsiteFromContext(r.Context()); website != nil {
+		websiteHash = &website.HashKey
+	}
+	var fp *string
+	if fingerprint != "" {
+		fp = &fingerprint
+	}
+
 	go func() {
-		// Convert patches to the format expected by the database
 		var patches []map[string]interface{}
 		for _, patch := range resp.Patches {
 			var patchMap map[string]interface{}
@@ -765,51 +769,42 @@ func (h *AIHandler) storePromptAsync(userID uuid.UUID, req AIPromptRequest, resp
 			}
 		}
 
-		// Create the user prompt record
-		prompt := &models.UserPrompt{
-			ID:             uuid.New(),
-			UserID:         userID,
-			WebsiteID:      req.WebsiteID,
-			SessionID:      uuid.New().String(), // Generate session ID if not provided
-			PromptText:     req.Prompt,
-			PromptType:     "ai_modification",
-			PromptLanguage: "en",
-			Success:        resp.Status == "ok",
-			Metadata:       make(models.PromptMetadata),
+		prompt := &models.CustomizationPrompt{
+			ID:               uuid.New(),
+			UserID:           userID,
+			WebsiteID:        req.WebsiteID,
+			WebsiteHash:      websiteHash,
+			BrowserClientID:  fp,
+			PromptText:       req.Prompt,
+			PromptType:       "ai_modification",
+			Success:          resp.Status == "ok",
 		}
 
-		// Set error message if the response failed
 		if resp.Status == "error" && len(resp.Warnings) > 0 {
 			errorMsg := strings.Join(resp.Warnings, "; ")
 			prompt.ErrorMessage = &errorMsg
 		}
 
-		// Store the prompt
 		if err := h.prompts.CreatePrompt(prompt); err != nil {
-			fmt.Printf("Error storing prompt for user %s: %v\n", userID, err)
+			fmt.Printf("Error storing prompt: %v\n", err)
 			return
 		}
 
-		// Create the prompt result record
-		result := &models.PromptResult{
-			ID:             uuid.New(),
-			PromptID:       prompt.ID,
-			UserID:         userID,
-			AIProvider:     h.config.Provider,
-			AIModel:        h.config.Model,
-			TokenCount:     0, // Could be calculated if needed
-			RawResponse:    resp.Raw,
-			PatchesApplied: patches,
-			Warnings:       resp.Warnings,
+		result := &models.CustomizationPromptResult{
+			ID:              uuid.New(),
+			PromptID:        prompt.ID,
+			WebsiteHash:     websiteHash,
+			BrowserClientID: fp,
+			AIProvider:      h.config.Provider,
+			AIModel:         h.config.Model,
+			RawResponse:     resp.Raw,
+			PatchesApplied:  patches,
+			Warnings:        resp.Warnings,
 		}
 
-		// Store the prompt result
 		if err := h.prompts.CreatePromptResult(result); err != nil {
-			fmt.Printf("Error storing prompt result for user %s: %v\n", userID, err)
-			return
+			fmt.Printf("Error storing prompt result: %v\n", err)
 		}
-
-		fmt.Printf("Successfully stored prompt for user %s: %s\n", userID, req.Prompt)
 	}()
 }
 
@@ -881,7 +876,7 @@ func (h *AIHandler) createCustomizationRecord(req AIPromptRequest, resp AIPrompt
 
 	_, err := h.db.Exec(`
 		INSERT INTO website_customizations
-		(id, browser_fingerprint, website_id, website_url, user_request, change_description,
+		(id, browser_client_id, website_id, website_url, user_request, change_description,
 		 element_targeted, modification_type, status, applied_at, created_at)
 		VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, 'Applied', NOW(), NOW())
 	`, fingerprint, websiteID, websiteURL, truncate(req.Prompt, 500), description, elementTargeted, modType)

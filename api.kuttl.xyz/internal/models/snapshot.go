@@ -15,24 +15,19 @@ import (
 // ─────────────────────────────────────────────
 
 type WebsiteSnapshot struct {
-	ID          uuid.UUID              `json:"id" db:"id"`
-	WebsiteID   string                 `json:"website_id" db:"website_id"`
-	UserID      uuid.UUID              `json:"user_id" db:"user_id"`
-	SessionID   string                 `json:"session_id" db:"session_id"`
-	Version     string                 `json:"version" db:"version"`
-	Components  ComponentStateArray    `json:"components" db:"components"`
-	Styles      StyleSnapshot          `json:"styles" db:"styles"`
-	Layout      LayoutStructure        `json:"layout" db:"layout"`
-	Customizations CustomizationLayer  `json:"customizations" db:"customizations"`
-	Metadata    SnapshotMetadata       `json:"metadata" db:"metadata"`
-	
-	// Prompt tracking (new fields)
-	PromptID           *uuid.UUID `json:"prompt_id,omitempty" db:"prompt_id"`
-	TriggerType        string     `json:"trigger_type" db:"trigger_type"`
-	BrowserFingerprint string     `json:"browser_fingerprint" db:"browser_fingerprint"`
-	
-	CreatedAt   time.Time              `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time              `json:"updated_at" db:"updated_at"`
+	ID              uuid.UUID          `json:"id" db:"id"`
+	WebsiteID       string             `json:"website_id" db:"website_id"`
+	BrowserClientID *string            `json:"browser_client_id" db:"browser_client_id"`
+	Version         string             `json:"version" db:"version"`
+	Components      ComponentStateArray `json:"components" db:"components"`
+	Styles          StyleSnapshot      `json:"styles" db:"styles"`
+	Layout          LayoutStructure    `json:"layout" db:"layout"`
+	Customizations  CustomizationLayer `json:"customizations" db:"customizations"`
+	Metadata        SnapshotMetadata   `json:"metadata" db:"metadata"`
+	PromptID        *uuid.UUID         `json:"prompt_id,omitempty" db:"prompt_id"`
+	TriggerType     string             `json:"trigger_type" db:"trigger_type"`
+	CreatedAt       time.Time          `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time          `json:"updated_at" db:"updated_at"`
 }
 
 type SnapshotDiff struct {

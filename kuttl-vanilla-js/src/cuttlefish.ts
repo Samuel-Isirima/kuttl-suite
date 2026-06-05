@@ -51,38 +51,43 @@ export interface CuttlefishInitConfig {
 }
 
 export function init(config: CuttlefishInitConfig = {}): void {
+  // No key — nothing to do
+  if (!_websiteKey) return;
+
   const icpConfig: import("./types/index").InterceptConfig = {
     debug: config.debug ?? false,
   };
 
   if (config.root) icpConfig.root = config.root;
 
-  // Website key: script attribute takes precedence over explicit config
   if (_websiteKey) icpConfig.websiteKey = _websiteKey;
 
-  // persistKey: auto-derive from website key so patches survive page refreshes
-  // without any client configuration
   icpConfig.persistKey = config.persistKey ??
-    (_websiteKey ? `kuttl_${_websiteKey.slice(0, 8)}` : `kuttl_${window.location.hostname}`);
+    `kuttl_${_websiteKey.slice(0, 8)}`;
 
   const apiBaseUrl = API_BASE;
 
-  // Snapshot: auto-enable whenever we have a website key and know where the API is
   const snapshotBase = config.snapshot ?? {};
-  if (apiBaseUrl) {
-    const snap: import("./types/index").InterceptConfig["snapshot"] = {
-      enabled:    snapshotBase.enabled   ?? (_websiteKey != null),
-      api:        { baseUrl: apiBaseUrl, ...(snapshotBase.api ?? {}) },
-      onChanges:  snapshotBase.onChanges ?? true,
-      throttleMs: snapshotBase.throttleMs ?? 5000,
-    };
-    if (snapshotBase.websiteId) snap!.websiteId = snapshotBase.websiteId;
-    if (snapshotBase.userId)    snap!.userId    = snapshotBase.userId;
-    icpConfig.snapshot = snap;
-  } else if (config.snapshot) {
-    icpConfig.snapshot = config.snapshot;
-  }
+  const snap: import("./types/index").InterceptConfig["snapshot"] = {
+    enabled:    snapshotBase.enabled   ?? true,
+    api:        { baseUrl: apiBaseUrl, ...(snapshotBase.api ?? {}) },
+    onChanges:  snapshotBase.onChanges ?? true,
+    throttleMs: snapshotBase.throttleMs ?? 5000,
+  };
+  if (snapshotBase.websiteId) snap!.websiteId = snapshotBase.websiteId;
+  if (snapshotBase.userId)    snap!.userId    = snapshotBase.userId;
+  icpConfig.snapshot = snap;
 
-  const intercept = interceptInit(icpConfig);
-  createCuttlefishUI(intercept, {});
+  // Validate the website key against the backend before mounting anything.
+  // A missing, invalid, or disabled key returns 401 — the FAB never appears.
+  fetch(`${API_BASE}/api/validate`, {
+    method: 'GET',
+    headers: { 'X-Website-Key': _websiteKey },
+  })
+    .then(res => {
+      if (!res.ok) return; // 401 / network error — stay silent
+      const intercept = interceptInit(icpConfig);
+      createCuttlefishUI(intercept, {});
+    })
+    .catch(() => { /* invalid key or offline — no FAB */ });
 }

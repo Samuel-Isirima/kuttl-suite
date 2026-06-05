@@ -10,13 +10,27 @@ export const api = ky.create({
   hooks: {
     beforeRequest: [
       (request) => {
-        // Add auth token if available
         if (typeof window !== 'undefined') {
           const token = localStorage.getItem('auth_token');
           if (token) {
             request.headers.set('Authorization', `Bearer ${token}`);
           }
         }
+      }
+    ],
+    afterResponse: [
+      (request, _options, response) => {
+        if (response.status === 401 && typeof window !== 'undefined') {
+          const hadToken = !!localStorage.getItem('auth_token');
+          // Only redirect if the user was previously authenticated —
+          // not on login/register attempts that legitimately return 401.
+          if (hadToken && !request.url.includes('/auth/login') && !request.url.includes('/auth/register')) {
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('user');
+            window.location.href = '/login';
+          }
+        }
+        return response;
       }
     ]
   }

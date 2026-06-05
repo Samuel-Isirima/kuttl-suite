@@ -152,7 +152,6 @@ func (s *EmbeddingService) generateFullSnapshotEmbedding(ctx context.Context, sn
 		ID:         uuid.New(),
 		SnapshotID: snapshot.ID,
 		WebsiteID:  snapshot.WebsiteID,
-		UserID:     snapshot.UserID,
 		VectorType: "full",
 		TargetID:   snapshot.ID.String(),
 		Vector:     models.Float32Array(finalVector),
@@ -287,8 +286,7 @@ func (s *EmbeddingService) generateComponentBatch(ctx context.Context, snapshot 
 			ID:         uuid.New(),
 			SnapshotID: snapshot.ID,
 			WebsiteID:  snapshot.WebsiteID,
-			UserID:     snapshot.UserID,
-			VectorType: "component",
+				VectorType: "component",
 			TargetID:   component.UID,
 			Vector:     models.Float32Array(vectors[i]),
 			Dimensions: len(vectors[i]),
@@ -392,7 +390,6 @@ func (s *EmbeddingService) generateStyleEmbedding(ctx context.Context, snapshot 
 		ID:         uuid.New(),
 		SnapshotID: snapshot.ID,
 		WebsiteID:  snapshot.WebsiteID,
-		UserID:     snapshot.UserID,
 		VectorType: "style",
 		TargetID:   snapshot.ID.String() + "-styles",
 		Vector:     models.Float32Array(vector),
@@ -484,7 +481,6 @@ func (s *EmbeddingService) generateLayoutEmbedding(ctx context.Context, snapshot
 		ID:         uuid.New(),
 		SnapshotID: snapshot.ID,
 		WebsiteID:  snapshot.WebsiteID,
-		UserID:     snapshot.UserID,
 		VectorType: "layout",
 		TargetID:   snapshot.ID.String() + "-layout",
 		Vector:     models.Float32Array(vector),
@@ -572,9 +568,8 @@ func (s *EmbeddingService) buildLayoutText(snapshot *models.WebsiteSnapshot) str
 // Similarity and Search
 // ─────────────────────────────────────────────
 
-func (s *EmbeddingService) FindSimilarComponents(ctx context.Context, websiteID string, userID uuid.UUID, queryVector models.Float32Array, limit int) ([]*models.EmbeddingVector, error) {
-	// Get recent component embeddings
-	candidates, err := s.snapshots.FindSimilarEmbeddings(websiteID, userID, queryVector, "component", limit*3) // Get more candidates
+func (s *EmbeddingService) FindSimilarComponents(ctx context.Context, websiteID string, queryVector models.Float32Array, limit int) ([]*models.EmbeddingVector, error) {
+	candidates, err := s.snapshots.FindSimilarEmbeddings(websiteID, queryVector, "component", limit*3)
 	if err != nil {
 		return nil, err
 	}

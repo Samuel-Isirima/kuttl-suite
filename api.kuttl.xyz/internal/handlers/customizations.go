@@ -23,7 +23,7 @@ func NewCustomizationHandler(db *sql.DB) *CustomizationHandler {
 // Frontend-friendly customization model
 type WebsiteCustomization struct {
 	ID                string    `json:"id" db:"id"`
-	UserID           string    `json:"user_id" db:"user_id"`
+	UserID           *string   `json:"user_id,omitempty" db:"user_id"`
 	WebsiteURL       string    `json:"website_url" db:"website_url"`
 	UserRequest      string    `json:"user_request" db:"user_request"`
 	ChangeDescription string    `json:"change_description" db:"change_description"`
@@ -69,14 +69,15 @@ func (ch *CustomizationHandler) GetCustomizations(w http.ResponseWriter, r *http
 	status := r.URL.Query().Get("status")
 	modType := r.URL.Query().Get("type")
 
-	// Build query
+	// Include customizations directly owned by the user OR belonging to the user's websites
 	query := `
-		SELECT id, user_id, website_url, user_request, change_description,
-			   element_targeted, modification_type, status, applied_at, created_at,
-			   prompt_id, snapshot_id
-		FROM website_customizations 
-		WHERE user_id = $1`
-	
+		SELECT wc.id, wc.user_id, wc.website_url, wc.user_request, wc.change_description,
+			   wc.element_targeted, wc.modification_type, wc.status, wc.applied_at, wc.created_at,
+			   wc.prompt_id, wc.snapshot_id
+		FROM website_customizations wc
+		LEFT JOIN websites w ON w.id = wc.website_id
+		WHERE wc.user_id = $1 OR w.user_id = $1`
+
 	args := []interface{}{userID}
 	argIndex := 2
 
@@ -131,33 +132,23 @@ func (ch *CustomizationHandler) GetCustomizationStats(w http.ResponseWriter, r *
 
 	var stats CustomizationStats
 
-	// Get total changes
-	err := ch.db.QueryRow(`
-		SELECT COUNT(*) 
-		FROM website_customizations 
-		WHERE user_id = $1
-	`, userID).Scan(&stats.TotalChanges)
+	scope := `
+		FROM website_customizations wc
+		LEFT JOIN websites w ON w.id = wc.website_id
+		WHERE wc.user_id = $1 OR w.user_id = $1`
+
+	err := ch.db.QueryRow(`SELECT COUNT(*) `+scope, userID).Scan(&stats.TotalChanges)
 	if err != nil {
 		stats.TotalChanges = 0
 	}
 
-	// Get success rate
 	var successCount int
-	err = ch.db.QueryRow(`
-		SELECT COUNT(*) 
-		FROM website_customizations 
-		WHERE user_id = $1 AND status = 'Applied'
-	`, userID).Scan(&successCount)
+	err = ch.db.QueryRow(`SELECT COUNT(*) `+scope+` AND wc.status = 'Applied'`, userID).Scan(&successCount)
 	if err == nil && stats.TotalChanges > 0 {
 		stats.SuccessRate = float64(successCount) / float64(stats.TotalChanges) * 100
 	}
 
-	// Get pending changes
-	err = ch.db.QueryRow(`
-		SELECT COUNT(*) 
-		FROM website_customizations 
-		WHERE user_id = $1 AND status = 'Pending'
-	`, userID).Scan(&stats.PendingChanges)
+	err = ch.db.QueryRow(`SELECT COUNT(*) `+scope+` AND wc.status = 'Pending'`, userID).Scan(&stats.PendingChanges)
 	if err != nil {
 		stats.PendingChanges = 0
 	}
@@ -266,7 +257,7 @@ func (ch *CustomizationHandler) CreateCustomizationFromWidget(w http.ResponseWri
 
 	_, err := ch.db.Exec(`
 		INSERT INTO website_customizations
-		(id, browser_fingerprint, website_id, website_url, user_request, change_description,
+		(id, browser_client_id, website_id, website_url, user_request, change_description,
 		 element_targeted, modification_type, status, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Pending', NOW())
 	`, customizationID, fingerprint, websiteID, websiteURL,
@@ -293,10 +284,10 @@ func (ch *CustomizationHandler) GetCustomizationsByFingerprint(w http.ResponseWr
 	}
 
 	rows, err := ch.db.Query(`
-		SELECT id, browser_fingerprint, website_url, user_request, change_description,
+		SELECT id, browser_client_id, website_url, user_request, change_description,
 		       element_targeted, modification_type, status, applied_at, created_at
 		FROM website_customizations
-		WHERE browser_fingerprint = $1
+		WHERE browser_client_id = $1
 		ORDER BY created_at DESC
 		LIMIT 100
 	`, fingerprint)
@@ -308,7 +299,7 @@ func (ch *CustomizationHandler) GetCustomizationsByFingerprint(w http.ResponseWr
 
 	type WidgetCustomization struct {
 		ID                string     `json:"id"`
-		BrowserFingerprint string    `json:"browser_fingerprint"`
+		BrowserClientID string    `json:"browser_client_id"`
 		WebsiteURL        string     `json:"website_url"`
 		UserRequest       string     `json:"user_request"`
 		ChangeDescription string     `json:"change_description"`
@@ -322,7 +313,7 @@ func (ch *CustomizationHandler) GetCustomizationsByFingerprint(w http.ResponseWr
 	var customizations []WidgetCustomization
 	for rows.Next() {
 		var c WidgetCustomization
-		if err := rows.Scan(&c.ID, &c.BrowserFingerprint, &c.WebsiteURL, &c.UserRequest,
+		if err := rows.Scan(&c.ID, &c.BrowserClientID, &c.WebsiteURL, &c.UserRequest,
 			&c.ChangeDescription, &c.ElementTargeted, &c.ModificationType,
 			&c.Status, &c.AppliedAt, &c.CreatedAt); err != nil {
 			response.Error(w, http.StatusInternalServerError, "Failed to parse customization data")
